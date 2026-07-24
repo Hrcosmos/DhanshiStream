@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 import 'tv_keys.dart';
 
 /// Visual style of the D-pad focus highlight.
 enum TvFocusVariant {
-  /// Accent outline + tint box — the original look. This is the default so
-  /// every screen that doesn't opt in stays byte-identical.
+  /// White outline + faint tint box — the default focus for buttons, rows and
+  /// tiles that don't opt into another variant. Premium, no accent glow.
   box,
 
   /// White rounded pill — nav items, action buttons, menu rows. Pair with
@@ -125,7 +124,9 @@ class _TvFocusableState extends State<TvFocusable> {
     final Widget box;
     switch (widget.variant) {
       case TvFocusVariant.box:
-        // UNCHANGED from the original — keep byte-identical.
+        // Premium neutral focus: a clean WHITE outline + a faint white fill and
+        // a soft black shadow (no accent tint) — consistent with the float
+        // variant used by posters.
         final bool useForeground =
             widget.foregroundHighlight || widget.scale == 1.0;
         box = AnimatedScale(
@@ -136,22 +137,18 @@ class _TvFocusableState extends State<TvFocusable> {
                 ? DecorationPosition.foreground
                 : DecorationPosition.background,
             decoration: BoxDecoration(
-              color: _focused ? AppColors.accent.withValues(alpha: 0.16) : null,
+              color: _focused ? Colors.white.withValues(alpha: 0.08) : null,
               border: Border.all(
-                color: _focused ? AppColors.accent : Colors.transparent,
-                width: 3,
+                color: _focused ? Colors.white : Colors.transparent,
+                width: 2.5,
               ),
               borderRadius: BorderRadius.circular(10),
               boxShadow: _focused
                   ? [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.65),
-                        blurRadius: 8,
-                        spreadRadius: 1,
-                      ),
-                      BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.25),
-                        blurRadius: 12,
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
                       ),
                     ]
                   : null,
