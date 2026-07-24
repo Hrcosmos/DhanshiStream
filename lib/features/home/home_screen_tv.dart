@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../../core/aniyomi/aniyomi_image_provider.dart';
 import '../../core/di/injector.dart';
+import '../../core/metadata/title_logo_service.dart';
 import '../../core/models/episode.dart';
 import '../../core/models/home_section.dart';
 import '../../core/models/media_item.dart';
@@ -15,8 +17,8 @@ import '../../core/playback/title_prefs.dart';
 import '../../core/playback/watch_history.dart';
 import '../../core/repository/source_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
-import '../../core/ui/featured_carousel.dart';
 import '../../core/ui/featured_hero.dart';
 import '../../core/ui/list_status_sheet.dart';
 import '../../core/ui/poster_card.dart';
@@ -248,7 +250,13 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
     VoidCallback onTap, {
     bool autofocus = false,
   }) {
-    return TvFocusable(autofocus: autofocus, onTap: onTap, child: child);
+    return TvFocusable(
+      autofocus: autofocus,
+      variant: TvFocusVariant.float,
+      scale: 1.06,
+      onTap: onTap,
+      child: child,
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -271,31 +279,26 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
       return CustomScrollView(
         slivers: [
           // ── Hero banner ──────────────────────────────────────────────────
-          // Uses the REAL phone FeaturedHero so the TV banner is visually
-          // identical to the phone.  The wrapButton hook injects TvFocusable
-          // around Play / My List / Info without touching the widget's own code.
+          // TV-only cinematic hero: full-bleed art with left-aligned title +
+          // meta + labelled buttons (Apple-TV style). Bespoke so it doesn't look
+          // like the phone's centred FeaturedHero card — that widget is left
+          // untouched for the phone.
           if (heroItem != null)
             SliverToBoxAdapter(
-              child: SizedBox(
-                height: kHeroHeight,
-                child: FeaturedHero(
+              child: _TvHero(
+                item: heroItem,
+                inList: _inList(heroItem),
+                metaFuture: _heroMeta(heroItem),
+                onPlay: () => _play(heroItem),
+                onInfo: () => _openDetail(heroItem),
+                onToggleList: () => showListStatusSheet(
+                  context,
                   item: heroItem,
-                  inList: _inList(heroItem),
-                  onPlay: () => _play(heroItem),
-                  onInfo: () => _openDetail(heroItem),
-                  onToggleList: () => showListStatusSheet(
-                    context,
-                    item: heroItem,
-                    onChanged: () {
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  metaFuture: _heroMeta(heroItem),
-                  // Inject TvFocusable around each button so Play / My List /
-                  // Info are all reachable via D-pad.  Play gets autofocus so
-                  // it is selected when the screen first appears.
-                  wrapButton: _tvWrapButton,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
                 ),
+                wrapButton: _tvWrapButton,
               ),
             ),
 
@@ -396,7 +399,7 @@ class TvRail extends StatelessWidget {
             // overflowed and the ListView cropped its title/poster (tester
             // report). The card itself stays [_cardHeight] and is centred in the
             // taller row, so unfocused cards look unchanged.
-            height: _cardHeight + 90,
+            height: _cardHeight + 68,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               // Don't clip the focused card's scale-up + accent glow. Combined
@@ -464,7 +467,7 @@ class TvRail extends StatelessWidget {
                       child: TvFocusable(
                         autofocus: firstAutofocus && index == 0,
                         variant: TvFocusVariant.float,
-                        scale: 1.14,
+                        scale: 1.08,
                         onTap: () => onTap(item),
                         child: PosterCard(
                           title: item.title,
@@ -531,7 +534,7 @@ class _TvContinueRail extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: _cardHeight + 90,
+            height: _cardHeight + 68,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -642,4 +645,269 @@ class _TvContinueCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── TV Hero ─────────────────────────────────────────────────────────────────
+
+/// Full-bleed cinematic hero for TV: the artwork fills the banner, a left-side
+/// scrim keeps the copy readable, and the title logo (or text), a meta line and
+/// the Play / My List / Info buttons sit bottom-left — Apple-TV style. The
+/// buttons pass through [wrapButton] so they become D-pad focusable.
+class _TvHero extends StatefulWidget {
+  const _TvHero({
+    required this.item,
+    required this.inList,
+    required this.metaFuture,
+    required this.onPlay,
+    required this.onInfo,
+    required this.onToggleList,
+    required this.wrapButton,
+  });
+
+  final MediaItem item;
+  final bool inList;
+  final Future<HeroMeta?>? metaFuture;
+  final VoidCallback onPlay;
+  final VoidCallback onInfo;
+  final VoidCallback onToggleList;
+  final Widget Function(Widget child, VoidCallback onTap, {bool autofocus})
+      wrapButton;
+
+  @override
+  State<_TvHero> createState() => _TvHeroState();
+}
+
+class _TvHeroState extends State<_TvHero> {
+  String? _logoUrl; // TMDB title logo (null → show the text title)
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLogo();
+  }
+
+  @override
+  void didUpdateWidget(_TvHero old) {
+    super.didUpdateWidget(old);
+    if (old.item.cover != widget.item.cover) {
+      _logoUrl = null;
+      _loadLogo();
+    }
+  }
+
+  Future<void> _loadLogo() async {
+    if (!sl.isRegistered<TitleLogoService>()) return;
+    try {
+      final url = await sl<TitleLogoService>().logoFor(widget.item);
+      if (mounted && url != null && url.isNotEmpty) {
+        setState(() => _logoUrl = url);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final cover = item.cover;
+    final hasCover = cover != null && cover.isNotEmpty;
+    final mq = MediaQuery.of(context);
+    final memW = (mq.size.width * mq.devicePixelRatio).round();
+    final provider =
+        hasCover ? aniyomiCoverProvider(cover, item.coverHeaders) : null;
+
+    return SizedBox(
+      height: mq.size.height * 0.72,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: AppColors.bg),
+          if (provider != null)
+            Image(
+              image: ResizeImage(provider, width: memW),
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              gaplessPlayback: true,
+            )
+          else
+            ColoredBox(color: AppColors.surface2),
+          // Left scrim for copy legibility.
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [Color(0xE60B0B0F), Color(0x4D0B0B0F), Color(0x000B0B0F)],
+                    stops: [0.0, 0.44, 0.72],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Bottom fade into the page so the rails below sit seamlessly.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [AppColors.bg, const Color(0x000B0B0F)],
+                    stops: const [0.015, 0.5],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Copy + actions, bottom-left.
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 56,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: mq.size.width * 0.5,
+                    maxHeight: 112,
+                  ),
+                  child: _logoUrl != null
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: CachedNetworkImage(
+                            imageUrl: _logoUrl!,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.centerLeft,
+                            memCacheWidth: memW,
+                            fadeInDuration: const Duration(milliseconds: 250),
+                            errorWidget: (_, _, _) => _titleText(),
+                          ),
+                        )
+                      : _titleText(),
+                ),
+                const SizedBox(height: 16),
+                _metaLine(),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    widget.wrapButton(_playBtn(), widget.onPlay,
+                        autofocus: true),
+                    const SizedBox(width: 12),
+                    widget.wrapButton(
+                      _glassBtn(
+                        widget.inList ? Icons.check_rounded : Icons.add_rounded,
+                        'My List',
+                        active: widget.inList,
+                      ),
+                      widget.onToggleList,
+                    ),
+                    const SizedBox(width: 12),
+                    widget.wrapButton(
+                      _glassBtn(Icons.info_outline_rounded, 'Info'),
+                      widget.onInfo,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _titleText() => Text(
+        widget.item.title,
+        style: AppText.largeTitle.copyWith(
+          fontSize: 52,
+          height: 1.0,
+          letterSpacing: -0.8,
+          fontWeight: FontWeight.w800,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+
+  Widget _metaLine() {
+    return FutureBuilder<HeroMeta?>(
+      future: widget.metaFuture,
+      builder: (context, snap) {
+        final m = snap.data;
+        if (m == null) return const SizedBox(height: 16);
+        final parts = <String>[...m.genres.take(3)];
+        if (m.episodeCount > 1) {
+          parts.add('${m.episodeCount} Episodes');
+        } else if ((m.year ?? '').isNotEmpty) {
+          parts.add(m.year!);
+        }
+        if (parts.isEmpty) return const SizedBox(height: 16);
+        return Text(
+          parts.join('   ·   ').toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppText.caption.copyWith(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.6,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _playBtn() => Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Play',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: AppColors.bg,
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _glassBtn(IconData icon, String label, {bool active = false}) =>
+      Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: active ? AppColors.accent : Colors.white, size: 20),
+            const SizedBox(width: 9),
+            Text(
+              label,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
 }

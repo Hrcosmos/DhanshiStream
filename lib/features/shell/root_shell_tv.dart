@@ -8,7 +8,6 @@ import '../../core/provider/provider_manager.dart' show AniyomiManager;
 import '../../core/provider/provider_registry.dart';
 import '../../core/state/active_source_cubit.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
 import '../auth/auth_cubit.dart';
 import '../downloads/downloads_screen.dart';
@@ -239,25 +238,82 @@ class _RootShellTvState extends State<RootShellTv> {
             );
           },
           builder: (focused) {
-            final fg = focused ? Colors.black : AppColors.textSecondary;
+            final label = _sourceLabel(sourceId);
+            final clean = label.replaceFirst(RegExp(r'^(CS|Ani) · '), '');
+            final initial =
+                clean.isNotEmpty ? clean.substring(0, 1).toUpperCase() : '?';
+            final nameColor = focused ? Colors.black : AppColors.textPrimary;
+            final lblColor =
+                focused ? const Color(0xFF5A5A5A) : AppColors.textTertiary;
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
               child: Row(
                 children: [
-                  Icon(Icons.swap_horiz, color: fg, size: 22),
-                  const SizedBox(width: 12),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFF5B301), Color(0xFFFF7A59)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: AnimatedOpacity(
                       opacity: _navOpen ? 1 : 0,
                       duration: const Duration(milliseconds: 160),
-                      child: Text(
-                        _sourceLabel(sourceId),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.body.copyWith(
-                          color: fg,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'SOURCE',
+                            style: TextStyle(
+                              color: lblColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  clean,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: nameColor,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.swap_horiz,
+                                size: 15,
+                                color: focused
+                                    ? const Color(0xFF777777)
+                                    : AppColors.textTertiary,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
