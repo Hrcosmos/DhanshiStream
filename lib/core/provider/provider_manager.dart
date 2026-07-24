@@ -543,13 +543,22 @@ class JsProvider implements BaseProvider {
   /// synthesizes default rows from [popular]). Never returns partial garbage:
   /// items without the basics are dropped, empty/untitled sections are kept
   /// out. Given a generous timeout since it may fan out several listing calls.
+  // Decode a provider's JSON off the UI thread when it's big — same trick the
+  // CloudStream path uses. Small results decode inline (spinning up an isolate
+  // isn't worth it); the big browse feeds are the ones that'd skip a frame
+  // otherwise. Playback (getVideoSources) is small + timing-sensitive, so it
+  // deliberately stays inline.
+  static dynamic _decodeJson(String s) => jsonDecode(s);
+  static Future<dynamic> _decodeBig(String s) async =>
+      s.length > 20000 ? await compute(_decodeJson, s) : jsonDecode(s);
+
   @override
   Future<List<HomeSection>?> getHome({String category = 'sub'}) async {
     try {
       final raw = await _call('getHome', [
         {'category': category},
       ], timeout: const Duration(seconds: 30));
-      final decoded = jsonDecode(raw);
+      final decoded = await _decodeBig(raw);
       if (decoded is! List) return null;
       final out = <HomeSection>[];
       for (final s in decoded) {
@@ -591,7 +600,9 @@ class JsProvider implements BaseProvider {
     final raw = await _call('popular', [
       {'category': category, 'dateRange': dateRange, 'page': page},
     ]);
-    final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    final list = (await _decodeBig(raw) as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
     return list
         .map((m) => MediaItem.fromJson({...m, 'sourceId': sourceId}))
         .toList();
@@ -608,7 +619,9 @@ class JsProvider implements BaseProvider {
       page,
       {'category': category},
     ]);
-    final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    final list = (await _decodeBig(raw) as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
     return list
         .map((m) => MediaItem.fromJson({...m, 'sourceId': sourceId}))
         .toList();
@@ -635,7 +648,9 @@ class JsProvider implements BaseProvider {
       url,
       {'category': category},
     ]);
-    final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    final list = (await _decodeBig(raw) as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
     return list.map(Episode.fromJson).toList();
   }
 
