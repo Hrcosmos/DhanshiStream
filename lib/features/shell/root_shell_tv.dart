@@ -19,7 +19,7 @@ import 'tv_source_picker.dart';
 
 /// Collapsed (icon-only) and expanded (labelled) drawer widths — kept narrow
 /// for a minimal Apple-TV feel.
-const double _kNavCollapsed = 78;
+const double _kNavCollapsed = 66;
 const double _kNavExpanded = 312;
 
 /// TV-only navigation shell: a collapsing left drawer over an [IndexedStack].
@@ -194,6 +194,25 @@ class _RootShellTvState extends State<RootShellTv> {
   }
 
   // ── Drawer pieces ─────────────────────────────────────────────────────────
+
+  /// The Zangetsu wordmark at the very top — revealed only when the drawer is
+  /// open (mirrors the mobile brand lockup).
+  Widget _brand() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
+      child: AnimatedOpacity(
+        opacity: _navOpen ? 1 : 0,
+        duration: const Duration(milliseconds: 160),
+        child: Image.asset(
+          'assets/icon/wordmark.png',
+          key: const ValueKey('tv-rail-wordmark'),
+          height: 20,
+          fit: BoxFit.contain,
+          alignment: Alignment.centerLeft,
+        ),
+      ),
+    );
+  }
 
   /// Source indicator — unchanged behaviour (opens [TvSourcePicker]); label
   /// fades in when open.
@@ -422,8 +441,10 @@ class _RootShellTvState extends State<RootShellTv> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 22),
-          _avatarBlock(), // profile at the TOP, Apple-TV style
+          const SizedBox(height: 20),
+          _brand(), // Zangetsu wordmark, revealed when open
+          const SizedBox(height: 12),
+          _avatarBlock(), // profile
           const SizedBox(height: 4),
           _sourceIndicator(), // source switch right under the profile
           const SizedBox(height: 8),
