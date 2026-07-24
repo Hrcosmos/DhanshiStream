@@ -17,9 +17,8 @@ import '../schedule/schedule_screen.dart';
 import 'root_shell.dart';
 import 'tv_source_picker.dart';
 
-/// Collapsed (icon-only) and expanded (labelled) drawer widths — kept narrow
-/// for a minimal Apple-TV feel.
-const double _kNavCollapsed = 66;
+/// Collapsed (icon-only) and expanded (labelled) drawer widths.
+const double _kNavCollapsed = 74;
 const double _kNavExpanded = 312;
 
 /// TV-only navigation shell: a collapsing left drawer over an [IndexedStack].
@@ -212,21 +211,30 @@ class _RootShellTvState extends State<RootShellTv> {
 
   // ── Drawer pieces ─────────────────────────────────────────────────────────
 
-  /// The Zangetsu wordmark at the very top — revealed only when the drawer is
-  /// open (mirrors the mobile brand lockup).
+  /// Brand lockup at the top of the rail: the square app icon is always shown
+  /// (so the collapsed rail never looks blank), and the wordmark fades in beside
+  /// it when the drawer opens.
   Widget _brand() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
-      child: AnimatedOpacity(
-        opacity: _navOpen ? 1 : 0,
-        duration: const Duration(milliseconds: 160),
-        child: Image.asset(
-          'assets/icon/wordmark.png',
-          key: const ValueKey('tv-rail-wordmark'),
-          height: 20,
-          fit: BoxFit.contain,
-          alignment: Alignment.centerLeft,
-        ),
+      padding: const EdgeInsets.fromLTRB(13, 0, 12, 0),
+      child: Row(
+        children: [
+          Image.asset('assets/icon/app_icon.png', width: 32, height: 32),
+          const SizedBox(width: 14),
+          Expanded(
+            child: AnimatedOpacity(
+              opacity: _navOpen ? 1 : 0,
+              duration: const Duration(milliseconds: 160),
+              child: Image.asset(
+                'assets/icon/wordmark.png',
+                key: const ValueKey('tv-rail-wordmark'),
+                height: 18,
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
