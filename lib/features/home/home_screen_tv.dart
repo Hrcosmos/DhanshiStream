@@ -562,16 +562,13 @@ class _TvContinueRail extends StatelessWidget {
                 final e = history[index];
                 return Padding(
                   padding: const EdgeInsets.only(right: 16),
-                  child: Center(
-                    child: SizedBox(
+                  child: SizedBox(
+                    width: _cardWidth,
+                    child: _TvContinueCard(
+                      entry: e,
                       width: _cardWidth,
-                      child: TvFocusable(
-                        autofocus: firstAutofocus && index == 0,
-                        variant: TvFocusVariant.float,
-                        scale: 1.08,
-                        onTap: () => onResume(e),
-                        child: _TvContinueCard(entry: e, width: _cardWidth),
-                      ),
+                      autofocus: firstAutofocus && index == 0,
+                      onResume: () => onResume(e),
                     ),
                   ),
                 );
@@ -589,9 +586,16 @@ class _TvContinueRail extends StatelessWidget {
 /// the shared portrait ContinueCard; that shared widget is left untouched for
 /// the phone.
 class _TvContinueCard extends StatelessWidget {
-  const _TvContinueCard({required this.entry, required this.width});
+  const _TvContinueCard({
+    required this.entry,
+    required this.width,
+    required this.onResume,
+    this.autofocus = false,
+  });
   final HistoryEntry entry;
   final double width;
+  final VoidCallback onResume;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
@@ -605,39 +609,48 @@ class _TvContinueCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if ((e.cover ?? '').isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: e.cover!,
-                      httpHeaders: e.coverHeaders,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 600,
-                      placeholder: (_, _) => ColoredBox(color: AppColors.surface2),
-                      errorWidget: (_, _, _) => ColoredBox(color: AppColors.surface2),
-                    )
-                  else
-                    ColoredBox(color: AppColors.surface2),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      height: 5,
-                      color: Colors.black.withValues(alpha: 0.55),
-                      alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: e.progress.clamp(0.0, 1.0),
-                        child: Container(color: AppColors.accent),
+          // Only the 16:9 ART gets the float focus (white outline hugs it).
+          TvFocusable(
+            autofocus: autofocus,
+            variant: TvFocusVariant.float,
+            scale: 1.05,
+            onTap: onResume,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if ((e.cover ?? '').isNotEmpty)
+                      CachedNetworkImage(
+                        imageUrl: e.cover!,
+                        httpHeaders: e.coverHeaders,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 600,
+                        placeholder: (_, _) =>
+                            ColoredBox(color: AppColors.surface2),
+                        errorWidget: (_, _, _) =>
+                            ColoredBox(color: AppColors.surface2),
+                      )
+                    else
+                      ColoredBox(color: AppColors.surface2),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        height: 5,
+                        color: Colors.black.withValues(alpha: 0.55),
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: e.progress.clamp(0.0, 1.0),
+                          child: Container(color: AppColors.accent),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
