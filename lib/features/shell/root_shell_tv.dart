@@ -10,6 +10,7 @@ import '../../core/state/active_source_cubit.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/tv/tv_focusable.dart';
 import '../auth/auth_cubit.dart';
+import '../auth/auth_screens_tv.dart';
 import '../downloads/downloads_screen.dart';
 import '../home/cubit/home_cubit.dart';
 import '../schedule/schedule_screen.dart';
@@ -17,8 +18,8 @@ import 'root_shell.dart';
 import 'tv_source_picker.dart';
 
 /// Collapsed (icon-only) and expanded (labelled) drawer widths.
-const double _kNavCollapsed = 104;
-const double _kNavExpanded = 340;
+const double _kNavCollapsed = 96;
+const double _kNavExpanded = 320;
 
 /// TV-only navigation shell: a collapsing left drawer over an [IndexedStack].
 ///
@@ -389,33 +390,49 @@ class _RootShellTvState extends State<RootShellTv> {
     );
   }
 
+  /// Account row pinned to the BOTTOM of the drawer (like the mockup). Always
+  /// visible: signed in → avatar + name (OK opens the log-out popup); signed
+  /// out → a placeholder + "Sign in" (OK opens the TV login screen).
   Widget _avatarBlock() {
     return BlocBuilder<AuthCubit, AuthState>(
       builder: (context, auth) {
-        if (!auth.isLoggedIn) return const SizedBox.shrink();
-        final name = auth.displayName;
+        final loggedIn = auth.isLoggedIn;
+        final name = loggedIn ? auth.displayName : 'Sign in';
+        final sub = loggedIn ? 'Signed in' : 'Sync your list';
         final avatar = auth.avatarUrl;
-        final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+        final initial =
+            (loggedIn && name.isNotEmpty) ? name[0].toUpperCase() : null;
         return TvFocusable(
           key: const ValueKey('tv-nav-avatar'),
           variant: TvFocusVariant.pill,
-          onTap: _confirmLogout,
+          onTap: () {
+            if (loggedIn) {
+              _confirmLogout();
+            } else {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const LoginScreenTv()),
+              );
+            }
+          },
           builder: (focused) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
             child: Row(
               children: [
                 CircleAvatar(
-                  radius: 22,
+                  radius: 21,
                   backgroundColor: AppColors.surface2,
                   backgroundImage: (avatar != null && avatar.isNotEmpty)
                       ? NetworkImage(avatar)
                       : null,
                   child: (avatar == null || avatar.isEmpty)
-                      ? Text(initial,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800))
+                      ? (initial != null
+                          ? Text(initial,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800))
+                          : const Icon(Icons.person_outline,
+                              color: AppColors.textSecondary, size: 22))
                       : null,
                 ),
                 const SizedBox(width: 14),
@@ -431,13 +448,17 @@ class _RootShellTvState extends State<RootShellTv> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                color: focused ? Colors.black : AppColors.textPrimary,
+                                color: focused
+                                    ? Colors.black
+                                    : AppColors.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700)),
-                        Text('Signed in',
+                        Text(sub,
                             maxLines: 1,
                             style: TextStyle(
-                                color: focused ? const Color(0xFF555555) : AppColors.textTertiary,
+                                color: focused
+                                    ? const Color(0xFF555555)
+                                    : AppColors.textTertiary,
                                 fontSize: 12)),
                       ],
                     ),
