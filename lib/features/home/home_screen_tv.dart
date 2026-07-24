@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -286,14 +288,14 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
           if (heroItem != null)
             SliverToBoxAdapter(
               child: _TvHero(
-                item: heroItem,
-                inList: _inList(heroItem),
-                metaFuture: _heroMeta(heroItem),
-                onPlay: () => _play(heroItem),
-                onInfo: () => _openDetail(heroItem),
-                onToggleList: () => showListStatusSheet(
+                items: heroItems.take(6).toList(),
+                inListOf: _inList,
+                metaOf: _heroMeta,
+                onPlay: _play,
+                onInfo: _openDetail,
+                onToggleList: (item) => showListStatusSheet(
                   context,
-                  item: heroItem,
+                  item: item,
                   onChanged: () {
                     if (mounted) setState(() {});
                   },
@@ -655,21 +657,22 @@ class _TvContinueCard extends StatelessWidget {
 /// buttons pass through [wrapButton] so they become D-pad focusable.
 class _TvHero extends StatefulWidget {
   const _TvHero({
-    required this.item,
-    required this.inList,
-    required this.metaFuture,
+    required this.items,
+    required this.inListOf,
+    required this.metaOf,
     required this.onPlay,
     required this.onInfo,
     required this.onToggleList,
     required this.wrapButton,
   });
 
-  final MediaItem item;
-  final bool inList;
-  final Future<HeroMeta?>? metaFuture;
-  final VoidCallback onPlay;
-  final VoidCallback onInfo;
-  final VoidCallback onToggleList;
+  /// Featured titles the hero rotates through (Apple-TV style).
+  final List<MediaItem> items;
+  final bool Function(MediaItem) inListOf;
+  final Future<HeroMeta?>? Function(MediaItem) metaOf;
+  final void Function(MediaItem) onPlay;
+  final void Function(MediaItem) onInfo;
+  final void Function(MediaItem) onToggleList;
   final Widget Function(Widget child, VoidCallback onTap, {bool autofocus})
       wrapButton;
 
@@ -678,28 +681,57 @@ class _TvHero extends StatefulWidget {
 }
 
 class _TvHeroState extends State<_TvHero> {
+  int _i = 0;
   String? _logoUrl; // TMDB title logo (null → show the text title)
+  Timer? _timer;
+
+  MediaItem get _item => widget.items[_i % widget.items.length];
 
   @override
   void initState() {
     super.initState();
     _loadLogo();
+    _startRotation();
   }
 
   @override
   void didUpdateWidget(_TvHero old) {
     super.didUpdateWidget(old);
-    if (old.item.cover != widget.item.cover) {
-      _logoUrl = null;
+    if (old.items.length != widget.items.length) {
+      _i = widget.items.isEmpty ? 0 : _i % widget.items.length;
+      _startRotation();
       _loadLogo();
     }
   }
 
+  /// Cycle the featured title every few seconds. The Focus nodes persist across
+  /// these rebuilds, so rotating never steals focus from the rows below.
+  void _startRotation() {
+    _timer?.cancel();
+    if (widget.items.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 9), (_) {
+        if (!mounted) return;
+        setState(() {
+          _i = (_i + 1) % widget.items.length;
+          _logoUrl = null;
+        });
+        _loadLogo();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadLogo() async {
     if (!sl.isRegistered<TitleLogoService>()) return;
+    final idx = _i;
     try {
-      final url = await sl<TitleLogoService>().logoFor(widget.item);
-      if (mounted && url != null && url.isNotEmpty) {
+      final url = await sl<TitleLogoService>().logoFor(_item);
+      if (mounted && idx == _i && url != null && url.isNotEmpty) {
         setState(() => _logoUrl = url);
       }
     } catch (_) {}
@@ -707,7 +739,8 @@ class _TvHeroState extends State<_TvHero> {
 
   @override
   Widget build(BuildContext context) {
-    final item = widget.item;
+    final item = _item;
+    final inList = widget.inListOf(item);
     final cover = item.cover;
     final hasCover = cover != null && cover.isNotEmpty;
     final mq = MediaQuery.of(context);
@@ -789,39 +822,66 @@ class _TvHeroState extends State<_TvHero> {
                       : _titleText(),
                 ),
                 const SizedBox(height: 16),
-                _metaLine(),
+                _metaLine(item),
                 const SizedBox(height: 24),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    widget.wrapButton(_playBtn(), widget.onPlay,
+                    widget.wrapButton(_playBtn(), () => widget.onPlay(item),
                         autofocus: true),
                     const SizedBox(width: 12),
                     widget.wrapButton(
                       _glassBtn(
-                        widget.inList ? Icons.check_rounded : Icons.add_rounded,
+                        inList ? Icons.check_rounded : Icons.add_rounded,
                         'My List',
-                        active: widget.inList,
+                        active: inList,
                       ),
-                      widget.onToggleList,
+                      () => widget.onToggleList(item),
                     ),
                     const SizedBox(width: 12),
                     widget.wrapButton(
                       _glassBtn(Icons.info_outline_rounded, 'Info'),
-                      widget.onInfo,
+                      () => widget.onInfo(item),
                     ),
                   ],
                 ),
               ],
             ),
           ),
+          // Page dots (Apple-TV) — one per featured title, current one widened.
+          if (widget.items.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 24,
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var d = 0; d < widget.items.length; d++)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: d == _i ? 20 : 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: d == _i
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
   Widget _titleText() => Text(
-        widget.item.title,
+        _item.title,
         style: AppText.largeTitle.copyWith(
           fontSize: 52,
           height: 1.0,
@@ -832,9 +892,9 @@ class _TvHeroState extends State<_TvHero> {
         overflow: TextOverflow.ellipsis,
       );
 
-  Widget _metaLine() {
+  Widget _metaLine(MediaItem item) {
     return FutureBuilder<HeroMeta?>(
-      future: widget.metaFuture,
+      future: widget.metaOf(item),
       builder: (context, snap) {
         final m = snap.data;
         if (m == null) return const SizedBox(height: 16);
