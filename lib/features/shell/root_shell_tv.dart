@@ -75,6 +75,11 @@ class _RootShellTvState extends State<RootShellTv> {
   final FocusScopeNode _contentScope =
       FocusScopeNode(debugLabel: 'tv-content-scope');
 
+  // One focus node per nav item so entering the rail can land straight on the
+  // CURRENT page's item (so you always see where you are).
+  final List<FocusNode> _navNodes =
+      List.generate(_kRailItems.length, (_) => FocusNode());
+
   @override
   void initState() {
     super.initState();
@@ -116,7 +121,16 @@ class _RootShellTvState extends State<RootShellTv> {
       final moved = FocusManager.instance.primaryFocus
               ?.focusInDirection(TraversalDirection.left) ??
           false;
-      if (!moved) _railScope.requestFocus();
+      // At the left edge → open the rail on the CURRENT page's item so it's
+      // clear which screen you're on.
+      if (!moved) {
+        final node = _navNodes[_index];
+        if (node.canRequestFocus) {
+          node.requestFocus();
+        } else {
+          _railScope.requestFocus();
+        }
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -127,6 +141,9 @@ class _RootShellTvState extends State<RootShellTv> {
     _searchFocusSignal.dispose();
     _railScope.dispose();
     _contentScope.dispose();
+    for (final n in _navNodes) {
+      n.dispose();
+    }
     super.dispose();
   }
 
@@ -289,6 +306,7 @@ class _RootShellTvState extends State<RootShellTv> {
   Widget _navItem(int i, _RailItem item) {
     final selected = _index == i;
     return TvFocusable(
+      focusNode: _navNodes[i],
       variant: TvFocusVariant.pill,
       onTap: () => _onItemSelected(i),
       builder: (focused) {

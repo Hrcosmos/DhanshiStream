@@ -34,10 +34,15 @@ class TvFocusable extends StatefulWidget {
     this.focusLabel,
     this.foregroundHighlight = false,
     this.variant = TvFocusVariant.box,
+    this.focusNode,
   }) : assert(
           child != null || builder != null,
           'TvFocusable needs either child or builder',
         );
+
+  /// Optional external focus node, so a parent can programmatically move focus
+  /// here (e.g. land on the current page's nav item when entering the rail).
+  final FocusNode? focusNode;
 
   /// Static child. Ignored when [builder] is supplied.
   final Widget? child;
@@ -207,6 +212,7 @@ class _TvFocusableState extends State<TvFocusable> {
     }
 
     return Focus(
+      focusNode: widget.focusNode,
       autofocus: widget.autofocus,
       onKeyEvent: _onKey,
       onFocusChange: (f) {

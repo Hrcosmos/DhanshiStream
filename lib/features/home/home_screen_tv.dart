@@ -369,14 +369,14 @@ class TvRail extends StatelessWidget {
   final VoidCallback? onSeeAll;
   final bool firstAutofocus;
 
-  static const double _cardWidth = 140;
-  static const double _cardHeight = 210;
+  static const double _cardWidth = 150;
+  static const double _cardHeight = 225; // 2:3 poster
 
   @override
   Widget build(BuildContext context) {
     final items = section.items;
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: 22, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -387,12 +387,13 @@ class TvRail extends StatelessWidget {
               section.title,
               style: const TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           // Card row
           SizedBox(
             // Extra vertical headroom so a focused card's float scale-up (+ the
@@ -401,7 +402,7 @@ class TvRail extends StatelessWidget {
             // overflowed and the ListView cropped its title/poster (tester
             // report). The card itself stays [_cardHeight] and is centred in the
             // taller row, so unfocused cards look unchanged.
-            height: _cardHeight + 68,
+            height: _cardHeight + 80,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               // Don't clip the focused card's scale-up + accent glow. Combined
@@ -416,7 +417,7 @@ class TvRail extends StatelessWidget {
                 if (index >= items.length) {
                   // Trailing "See all" card — opens the full paginated grid.
                   return Padding(
-                    padding: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.only(right: 16),
                     child: Center(
                       child: SizedBox(
                         width: _cardWidth,
@@ -458,7 +459,7 @@ class TvRail extends StatelessWidget {
                 }
                 final item = items[index];
                 return Padding(
-                  padding: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.only(right: 16),
                   child: Center(
                     child: SizedBox(
                       width: _cardWidth,
@@ -536,7 +537,7 @@ class _TvContinueRail extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: _cardHeight + 68,
+            height: _cardHeight + 80,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -545,7 +546,7 @@ class _TvContinueRail extends StatelessWidget {
               itemBuilder: (context, index) {
                 final e = history[index];
                 return Padding(
-                  padding: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.only(right: 16),
                   child: Center(
                     child: SizedBox(
                       width: _cardWidth,
@@ -793,11 +794,11 @@ class _TvHeroState extends State<_TvHero> {
               ),
             ),
           ),
-          // Copy + actions, bottom-left.
+          // Copy + actions, bottom-left (aligned with the row titles below).
           Positioned(
-            left: 24,
-            right: 24,
-            bottom: 56,
+            left: 48,
+            right: 48,
+            bottom: 52,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -829,7 +830,7 @@ class _TvHeroState extends State<_TvHero> {
                   children: [
                     widget.wrapButton(_playBtn(), () => widget.onPlay(item),
                         autofocus: true),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     widget.wrapButton(
                       _glassBtn(
                         inList ? Icons.check_rounded : Icons.add_rounded,
@@ -838,7 +839,7 @@ class _TvHeroState extends State<_TvHero> {
                       ),
                       () => widget.onToggleList(item),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     widget.wrapButton(
                       _glassBtn(Icons.info_outline_rounded, 'Info'),
                       () => widget.onInfo(item),
@@ -920,24 +921,24 @@ class _TvHeroState extends State<_TvHero> {
   }
 
   Widget _playBtn() => Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 22),
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 28),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 20),
-            const SizedBox(width: 7),
+            Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 24),
+            const SizedBox(width: 8),
             Text(
               'Play',
               style: TextStyle(
                 fontFamily: 'Inter',
                 color: AppColors.bg,
                 fontWeight: FontWeight.w700,
-                fontSize: 14,
+                fontSize: 16,
               ),
             ),
           ],
@@ -946,25 +947,25 @@ class _TvHeroState extends State<_TvHero> {
 
   Widget _glassBtn(IconData icon, String label, {bool active = false}) =>
       Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 22),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: active ? AppColors.accent : Colors.white, size: 17),
-            const SizedBox(width: 7),
+            Icon(icon, color: active ? AppColors.accent : Colors.white, size: 20),
+            const SizedBox(width: 8),
             Text(
               label,
               style: const TextStyle(
                 fontFamily: 'Inter',
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
-                fontSize: 13.5,
+                fontSize: 15,
               ),
             ),
           ],
