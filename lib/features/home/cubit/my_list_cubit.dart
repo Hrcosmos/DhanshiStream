@@ -29,7 +29,24 @@ class MyListCubit extends Cubit<List<MyListEntry>> {
 
   void reload() {
     if (isClosed) return;
-    emit([for (final m in _store.all()) MyListEntry(m, _status.statusOf(m))]);
+    final next = [
+      for (final m in _store.all()) MyListEntry(m, _status.statusOf(m)),
+    ];
+    // The stores fire a revision even when the resulting list is identical
+    // (e.g. an unrelated status write elsewhere). Skip the emit — and the whole
+    // grid rebuild — when nothing actually changed.
+    if (_unchanged(state, next)) return;
+    emit(next);
+  }
+
+  static bool _unchanged(List<MyListEntry> a, List<MyListEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].item.url != b[i].item.url || a[i].status != b[i].status) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override

@@ -53,6 +53,9 @@ Future<void> main() async {
     // baseline). On-screen images stay full quality; far-off-screen ones reload
     // from the disk cache.
     PaintingBinding.instance.imageCache.maximumSizeBytes = 80 << 20; // 80 MB
+    // Cap the count too — the byte ceiling alone lets lots of small images
+    // (cast photos, credits) pile up. 300 is plenty for the visible screens.
+    PaintingBinding.instance.imageCache.maximumSize = 300;
     // Firebase Analytics. Guarded so a build without google-services.json (or a
     // device without Play Services) still boots — analytics just stays off.
     try {

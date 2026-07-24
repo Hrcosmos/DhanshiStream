@@ -1757,6 +1757,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
             imageUrl: img,
             httpHeaders: widget.coverHeaders,
             fit: BoxFit.cover,
+            // It's a dimmed, scrimmed backdrop behind the video — no need to
+            // hold the full-res poster in memory.
+            memCacheWidth: 1080,
             errorWidget: (c, u, e) => const ColoredBox(color: Colors.black),
             placeholder: (c, u) => const ColoredBox(color: Colors.black),
           ),

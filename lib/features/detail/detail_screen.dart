@@ -3686,6 +3686,8 @@ class _CastTab extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: m.photo!,
                         fit: BoxFit.cover,
+                        // Small avatar cell — decode it small, not full-res.
+                        memCacheWidth: 200,
                         placeholder: (_, _) =>
                             Container(color: AppColors.surface2),
                         errorWidget: (_, _, _) => const _AvatarFallback(),
