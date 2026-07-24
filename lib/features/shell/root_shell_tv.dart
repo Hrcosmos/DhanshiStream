@@ -241,37 +241,16 @@ class _RootShellTvState extends State<RootShellTv> {
           builder: (focused) {
             final label = _sourceLabel(sourceId);
             final clean = label.replaceFirst(RegExp(r'^(CS|Ani) · '), '');
-            final initial =
-                clean.isNotEmpty ? clean.substring(0, 1).toUpperCase() : '?';
             final nameColor = focused ? Colors.black : AppColors.textPrimary;
             final lblColor =
                 focused ? const Color(0xFF5A5A5A) : AppColors.textTertiary;
+            final iconColor = focused ? Colors.black : AppColors.textSecondary;
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
               child: Row(
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFFF5B301), Color(0xFFFF7A59)],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
+                  Icon(Icons.swap_horiz_rounded, size: 26, color: iconColor),
+                  const SizedBox(width: 18),
                   Expanded(
                     child: AnimatedOpacity(
                       opacity: _navOpen ? 1 : 0,
@@ -289,30 +268,16 @@ class _RootShellTvState extends State<RootShellTv> {
                               letterSpacing: 0.6,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  clean,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: nameColor,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.swap_horiz,
-                                size: 15,
-                                color: focused
-                                    ? const Color(0xFF777777)
-                                    : AppColors.textTertiary,
-                              ),
-                            ],
+                          const SizedBox(height: 1),
+                          Text(
+                            clean,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: nameColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ],
                       ),
@@ -431,8 +396,8 @@ class _RootShellTvState extends State<RootShellTv> {
                                   color: Colors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800))
-                          : const Icon(Icons.person_outline,
-                              color: AppColors.textSecondary, size: 22))
+                          : const Icon(Icons.person_rounded,
+                              color: AppColors.textSecondary, size: 26))
                       : null,
                 ),
                 const SizedBox(width: 14),
