@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/models/media_item.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
-import '../../core/tv/tv_focusable.dart';
 import '../../core/tv/tv_back_button.dart';
-import '../../core/ui/poster_card.dart';
+import '../../core/tv/tv_poster_tile.dart';
 
 /// TV variant of [SeeAllScreen]: a full-screen D-pad-navigable poster grid.
 ///
@@ -49,7 +48,6 @@ class _SeeAllScreenTvState extends State<SeeAllScreenTv> {
   /// 6 columns keeps the cards near the home-rail ~140 dp scale on a 1080p TV
   /// (5 rendered them oversized).
   static const int _crossAxisCount = 6;
-  static const double _cardWidth = 140;
 
   late final List<MediaItem> _items = [...widget.items];
   final Set<String> _seen = {};
@@ -147,32 +145,22 @@ class _SeeAllScreenTvState extends State<SeeAllScreenTv> {
             cacheExtent: 800,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _crossAxisCount,
-              // Extra headroom vs the old 0.62 — titles now render below the poster.
-              childAspectRatio: 0.55,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 20,
+              // Poster art + title below (outline hugs the art).
+              childAspectRatio: 0.56,
+              crossAxisSpacing: 18,
+              mainAxisSpacing: 22,
             ),
             itemCount: _items.length,
             itemBuilder: (context, i) {
               if (paginating) _maybeLoadFromIndex(i);
               final item = _items[i];
-              return TvFocusable(
+              return TvPosterTile(
                 autofocus: i == 0,
-                variant: TvFocusVariant.float,
-                scale: 1.12,
+                title: item.title,
+                imageUrl: item.cover,
+                headers: item.coverHeaders,
+                tags: widget.tagsFor?.call(item) ?? const [],
                 onTap: () => widget.onTap(item),
-                child: PosterCard(
-                  title: item.title,
-                  imageUrl: item.cover,
-                  headers: item.coverHeaders,
-                  tags: widget.tagsFor?.call(item) ?? const [],
-                  cellWidth: _cardWidth,
-                  showTitle: true,
-                  // Touch gestures are disabled on TV; [TvFocusable] handles
-                  // OK-key selection.
-                  onTap: null,
-                  onLongPress: null,
-                ),
               );
             },
           ),

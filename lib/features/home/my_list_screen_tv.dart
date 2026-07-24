@@ -4,8 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/models/media_item.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
-import '../../core/tv/tv_focusable.dart';
-import '../../core/ui/poster_card.dart';
+import '../../core/tv/tv_poster_tile.dart';
 import '../../core/ui/states.dart';
 import '../detail/detail_screen.dart';
 import 'cubit/my_list_cubit.dart';
@@ -27,7 +26,6 @@ class MyListScreenTv extends StatelessWidget {
   /// 6 columns keeps the cards near the home-rail ~140 dp scale on a 1080p TV
   /// (matches the see-all grid; 5 rendered them oversized).
   static const int _crossAxisCount = 6;
-  static const double _cardWidth = 140;
 
   Future<void> _openItem(BuildContext context, MediaItem item) async {
     final cubit = context.read<MyListCubit>();
@@ -63,30 +61,20 @@ class MyListScreenTv extends StatelessWidget {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: _crossAxisCount,
-                      // Extra headroom vs the old 0.62 — titles now render below the poster.
-                      childAspectRatio: 0.55,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 20,
+                      // Poster art + title below (outline hugs the art).
+                      childAspectRatio: 0.56,
+                      crossAxisSpacing: 18,
+                      mainAxisSpacing: 22,
                     ),
                     itemCount: entries.length,
                     itemBuilder: (context, i) {
                       final entry = entries[i];
-                      return TvFocusable(
+                      return TvPosterTile(
                         autofocus: i == 0,
-                        variant: TvFocusVariant.float,
-                        scale: 1.12,
+                        title: entry.item.title,
+                        imageUrl: entry.item.cover,
+                        headers: entry.item.coverHeaders,
                         onTap: () => _openItem(context, entry.item),
-                        child: PosterCard(
-                          title: entry.item.title,
-                          imageUrl: entry.item.cover,
-                          headers: entry.item.coverHeaders,
-                          cellWidth: _cardWidth,
-                          showTitle: true,
-                          // Touch gestures are disabled on TV; [TvFocusable]
-                          // handles OK-key selection.
-                          onTap: null,
-                          onLongPress: null,
-                        ),
                       );
                     },
                   );

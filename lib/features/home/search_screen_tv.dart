@@ -6,7 +6,7 @@ import '../../core/models/media_item.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
-import '../../core/ui/poster_card.dart';
+import '../../core/tv/tv_poster_tile.dart';
 import '../../core/ui/states.dart';
 import '../detail/detail_screen.dart';
 import '../search/bloc/search_bloc.dart';
@@ -40,7 +40,6 @@ class SearchScreenTv extends StatefulWidget {
 class _SearchScreenTvState extends State<SearchScreenTv> {
   /// 6 columns fills a 1920-wide TV at ~140 dp card width with comfortable gaps.
   static const int _crossAxisCount = 6;
-  static const double _cardWidth = 130.0;
 
   late final TextEditingController _controller;
   // DOWN from the field must LEAVE it (which closes the TV keyboard) and drop
@@ -311,32 +310,22 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
       padding: const EdgeInsets.fromLTRB(40, 0, 40, 40),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _crossAxisCount,
-        // Extra headroom vs the old 0.62 — titles now render below the poster.
-        childAspectRatio: 0.55,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 20,
+        // Poster art + title below (outline hugs the art).
+        childAspectRatio: 0.56,
+        crossAxisSpacing: 18,
+        mainAxisSpacing: 22,
       ),
       itemCount: items.length,
       itemBuilder: (context, i) {
         final item = items[i];
-        return TvFocusable(
-          // First result gets autofocus so D-pad DOWN from the search field
-          // lands here immediately after results populate.
+        // First result gets autofocus so D-pad DOWN from the field lands here.
+        return TvPosterTile(
           autofocus: i == 0,
-          variant: TvFocusVariant.float,
-          scale: 1.12,
+          title: item.title,
+          imageUrl: item.cover,
+          headers: item.coverHeaders,
+          tags: _tagsFor(item),
           onTap: () => _openDetail(item),
-          child: PosterCard(
-            title: item.title,
-            imageUrl: item.cover,
-            headers: item.coverHeaders,
-            tags: _tagsFor(item),
-            cellWidth: _cardWidth,
-            showTitle: true,
-            // Touch gestures disabled on TV; [TvFocusable] handles OK-key.
-            onTap: null,
-            onLongPress: null,
-          ),
         );
       },
     );
