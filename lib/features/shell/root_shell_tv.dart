@@ -173,15 +173,14 @@ class _RootShellTvState extends State<RootShellTv> {
 
   void _onItemSelected(int i) {
     setState(() => _index = i);
-    if (i == _searchRailItem) {
-      // Search: the field autofocuses off this signal, which pulls focus out of
-      // the rail and collapses the drawer.
-      _searchFocusSignal.value++;
-      return;
-    }
-    // Every other section: hand focus to the freshly shown page so the drawer
-    // collapses and you land in the content — picking a section takes you into
-    // it (like tapping right), instead of leaving the nav open over the page.
+    if (i == _searchRailItem) _searchFocusSignal.value++;
+    // Hand focus to the freshly shown page so the drawer collapses and you land
+    // in the content — picking a section takes you into it (like tapping right)
+    // instead of leaving the nav open over the page. Runs for EVERY section,
+    // including Search: the TV search screen isn't wired to _searchFocusSignal
+    // (that's the phone path), so without this the rail kept focus and the
+    // drawer stayed open. On Search this lands on the search field, which also
+    // pops the keyboard.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _contentScope.traversalDescendants
