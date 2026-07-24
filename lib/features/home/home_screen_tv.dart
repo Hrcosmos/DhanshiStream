@@ -376,7 +376,7 @@ class TvRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = section.items;
     return Padding(
-      padding: const EdgeInsets.only(top: 22, bottom: 8),
+      padding: const EdgeInsets.only(top: 26, bottom: 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -394,15 +394,13 @@ class TvRail extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          // Card row
+          // Card row. Height = poster + title + a little headroom for the
+          // focused card's scale-up (the ListView is Clip.none so the growth and
+          // its shadow spill past this box rather than being cropped). Kept snug
+          // so rows don't float apart — the old +80 left a big dead band under
+          // each title.
           SizedBox(
-            // Extra vertical headroom so a focused card's float scale-up (+ the
-            // always-visible title below the poster) has room to grow instead of
-            // being clipped by the row: without it the taller focused card
-            // overflowed and the ListView cropped its title/poster (tester
-            // report). The card itself stays [_cardHeight] and is centred in the
-            // taller row, so unfocused cards look unchanged.
-            height: _cardHeight + 80,
+            height: _cardHeight + 44,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               // Don't clip the focused card's scale-up + accent glow. Combined
@@ -535,7 +533,7 @@ class _TvContinueRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: 24, bottom: 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -551,8 +549,10 @@ class _TvContinueRail extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          // Landscape art + two lines of text below; snug headroom for the
+          // focused card's scale-up (Clip.none lets it spill, so no crop).
           SizedBox(
-            height: _cardHeight + 80,
+            height: _cardHeight + 60,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
