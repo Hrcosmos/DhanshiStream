@@ -182,30 +182,33 @@ class _TvFocusableState extends State<TvFocusable> {
           ),
         );
       case TvFocusVariant.float:
+        // Premium focus: scale up, a clean WHITE outline over the edge, and a
+        // neutral (never accent-tinted) drop shadow for depth.
         box = AnimatedScale(
           scale: _focused ? widget.scale : 1.0,
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               boxShadow: _focused
                   ? [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.82),
-                        blurRadius: 40,
-                        offset: const Offset(0, 24),
-                      ),
-                      BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.18),
-                        blurRadius: 30,
+                        color: Colors.black.withValues(alpha: 0.6),
+                        blurRadius: 22,
                         offset: const Offset(0, 12),
                       ),
                     ]
                   : null,
             ),
+            foregroundDecoration: _focused
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white, width: 3),
+                  )
+                : null,
             child: inner,
           ),
         );

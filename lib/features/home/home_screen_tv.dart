@@ -458,32 +458,47 @@ class TvRail extends StatelessWidget {
                   );
                 }
                 final item = items[index];
+                // Only the poster ART gets the float focus (white outline hugs
+                // the artwork); the title sits below, outside the outline.
                 return Padding(
                   padding: const EdgeInsets.only(right: 16),
-                  child: Center(
-                    child: SizedBox(
-                      width: _cardWidth,
-                      // Premium "float" focus: the card lifts + scales + gets a
-                      // deep shadow, no ring. The title now always renders below
-                      // the poster (PosterCard.showTitle), so the card sizes to
-                      // poster + title instead of a fixed height.
-                      child: TvFocusable(
-                        autofocus: firstAutofocus && index == 0,
-                        variant: TvFocusVariant.float,
-                        scale: 1.08,
-                        onTap: () => onTap(item),
-                        child: PosterCard(
-                          title: item.title,
-                          imageUrl: item.cover,
-                          headers: item.coverHeaders,
-                          cellWidth: _cardWidth,
-                          showTitle: true,
-                          // Touch gestures are disabled on TV; TvFocusable
-                          // handles OK-key selection.
-                          onTap: null,
-                          onLongPress: null,
+                  child: SizedBox(
+                    width: _cardWidth,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TvFocusable(
+                          autofocus: firstAutofocus && index == 0,
+                          variant: TvFocusVariant.float,
+                          scale: 1.06,
+                          onTap: () => onTap(item),
+                          child: SizedBox(
+                            width: _cardWidth,
+                            height: _cardHeight,
+                            child: PosterCard(
+                              title: item.title,
+                              imageUrl: item.cover,
+                              headers: item.coverHeaders,
+                              cellWidth: _cardWidth,
+                              showTitle: false,
+                              onTap: null,
+                              onLongPress: null,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
