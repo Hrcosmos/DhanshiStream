@@ -194,32 +194,6 @@ class _RootShellTvState extends State<RootShellTv> {
 
   // ── Drawer pieces ─────────────────────────────────────────────────────────
 
-  /// Brand: the square app icon always, with the wordmark revealed when open.
-  Widget _brand() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 12, 10),
-      child: Row(
-        children: [
-          Image.asset('assets/icon/app_icon.png', width: 34, height: 34),
-          const SizedBox(width: 14),
-          Expanded(
-            child: AnimatedOpacity(
-              opacity: _navOpen ? 1 : 0,
-              duration: const Duration(milliseconds: 160),
-              child: Image.asset(
-                'assets/icon/wordmark.png',
-                key: const ValueKey('tv-rail-wordmark'),
-                height: 22,
-                fit: BoxFit.contain,
-                alignment: Alignment.centerLeft,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Source indicator — unchanged behaviour (opens [TvSourcePicker]); label
   /// fades in when open.
   Widget _sourceIndicator() {
@@ -343,7 +317,7 @@ class _RootShellTvState extends State<RootShellTv> {
       context: context,
       barrierColor: Colors.black54,
       builder: (dialogCtx) => Align(
-        alignment: const Alignment(-0.72, 0.55), // near the avatar (lower-left)
+        alignment: const Alignment(-0.72, -0.42), // near the profile (top-left)
         child: TvLogoutSheet(
           onConfirm: () {
             Navigator.of(dialogCtx).pop();
@@ -447,14 +421,10 @@ class _RootShellTvState extends State<RootShellTv> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 20),
-          _brand(),
-          const SizedBox(height: 6),
-          _sourceIndicator(),
-          const SizedBox(height: 6),
-          const Divider(height: 1, color: AppColors.hairline, indent: 16, endIndent: 16),
-          const SizedBox(height: 8),
-          // Nav items live in a flexible middle so the account row always pins
+          const SizedBox(height: 24),
+          _avatarBlock(), // profile at the TOP, Apple-TV style
+          const SizedBox(height: 14),
+          // Nav items live in a flexible middle so the source row always pins
           // to the bottom and the column never overflows on shorter panels.
           Expanded(
             child: SingleChildScrollView(
@@ -467,7 +437,10 @@ class _RootShellTvState extends State<RootShellTv> {
               ),
             ),
           ),
-          _avatarBlock(),
+          const Divider(
+              height: 1, color: AppColors.hairline, indent: 16, endIndent: 16),
+          const SizedBox(height: 6),
+          _sourceIndicator(), // source switch pinned to the bottom
           const SizedBox(height: 12),
         ],
       ),

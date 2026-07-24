@@ -341,7 +341,7 @@ void main() {
   );
 
   testWidgets(
-    'RootShellTv shows the ZANGETSU wordmark image at the top of the rail',
+    'RootShellTv shows the profile row at the top of the nav',
     (tester) async {
       await tester.pumpWidget(
         MultiBlocProvider(
@@ -353,10 +353,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // The rail's wordmark is keyed 'tv-rail-wordmark' — exactly one in the
-      // nav rail (other shell pages may also show the wordmark at a different
-      // size; the key identifies the rail's copy specifically).
-      expect(find.byKey(const ValueKey('tv-rail-wordmark')), findsOneWidget);
+      // The account/profile row (avatar + name / "Sign in") is keyed
+      // 'tv-nav-avatar' and sits at the top of the nav.
+      expect(find.byKey(const ValueKey('tv-nav-avatar')), findsOneWidget);
     },
   );
 
@@ -379,7 +378,7 @@ void main() {
         find.byKey(const ValueKey('tv-source-indicator')),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.swap_horiz), findsOneWidget);
+      expect(find.byIcon(Icons.swap_horiz_rounded), findsOneWidget);
     },
   );
 
