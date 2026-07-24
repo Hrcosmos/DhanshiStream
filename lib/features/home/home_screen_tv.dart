@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -591,12 +592,13 @@ class _TvContinueCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   if ((e.cover ?? '').isNotEmpty)
-                    Image.network(
-                      e.cover!,
-                      headers: e.coverHeaders,
+                    CachedNetworkImage(
+                      imageUrl: e.cover!,
+                      httpHeaders: e.coverHeaders,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) =>
-                          ColoredBox(color: AppColors.surface2),
+                      memCacheWidth: 600,
+                      placeholder: (_, _) => ColoredBox(color: AppColors.surface2),
+                      errorWidget: (_, _, _) => ColoredBox(color: AppColors.surface2),
                     )
                   else
                     ColoredBox(color: AppColors.surface2),
