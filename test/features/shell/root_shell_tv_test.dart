@@ -414,7 +414,7 @@ void main() {
       // Expect exactly the rail scope and the content scope.
       expect(
         scopeNodes.map((n) => n.debugLabel).toSet(),
-        containsAll(['tv-nav-scope', 'tv-content-scope']),
+        containsAll(['tv-rail-scope', 'tv-content-scope']),
       );
     },
   );

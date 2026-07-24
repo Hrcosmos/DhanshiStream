@@ -17,8 +17,10 @@ import '../schedule/schedule_screen.dart';
 import 'root_shell.dart';
 import 'tv_source_picker.dart';
 
-/// Height of the top navigation bar (Netflix-style).
-const double _kNavHeight = 74;
+/// Collapsed (icon-only) and expanded (labelled) drawer widths — kept narrow
+/// for a minimal Apple-TV feel.
+const double _kNavCollapsed = 66;
+const double _kNavExpanded = 312;
 
 /// TV-only navigation shell: a collapsing left drawer over an [IndexedStack].
 ///
@@ -63,12 +65,13 @@ class _RootShellTvState extends State<RootShellTv> {
   static const int _searchRailItem = 1;
 
   int _index = 0;
+  bool _navOpen = false; // drawer expanded ⇔ focus is in the rail zone
   DateTime? _lastBackPress;
 
   final ValueNotifier<int> _searchFocusSignal = ValueNotifier<int>(0);
 
-  // ── D-pad bridge: top nav ↕ content ───────────────────────────────────────
-  final FocusScopeNode _railScope = FocusScopeNode(debugLabel: 'tv-nav-scope');
+  // ── D-pad bridge: rail ↔ content (unchanged from the original) ────────────
+  final FocusScopeNode _railScope = FocusScopeNode(debugLabel: 'tv-rail-scope');
   final FocusScopeNode _contentScope =
       FocusScopeNode(debugLabel: 'tv-content-scope');
 
@@ -90,10 +93,9 @@ class _RootShellTvState extends State<RootShellTv> {
     });
   }
 
-  // DOWN from the top nav → drop into the content area.
   KeyEventResult _onRailKey(FocusNode _, KeyEvent event) {
     if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        event.logicalKey == LogicalKeyboardKey.arrowRight) {
       final lastFocused = _contentScope.focusedChild;
       if (lastFocused != null && lastFocused.canRequestFocus) {
         lastFocused.requestFocus();
@@ -108,13 +110,11 @@ class _RootShellTvState extends State<RootShellTv> {
     return KeyEventResult.ignored;
   }
 
-  // UP from content: move up within content first; only jump to the top nav
-  // when already at the top edge.
   KeyEventResult _onContentKey(FocusNode _, KeyEvent event) {
     if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       final moved = FocusManager.instance.primaryFocus
-              ?.focusInDirection(TraversalDirection.up) ??
+              ?.focusInDirection(TraversalDirection.left) ??
           false;
       if (!moved) _railScope.requestFocus();
       return KeyEventResult.handled;
@@ -195,22 +195,27 @@ class _RootShellTvState extends State<RootShellTv> {
 
   // ── Drawer pieces ─────────────────────────────────────────────────────────
 
-  /// Zangetsu wordmark at the far left of the top nav (width-capped so the ornate
-  /// lockup doesn't crowd the tabs).
+  /// The Zangetsu wordmark at the very top — revealed only when the drawer is
+  /// open (mirrors the mobile brand lockup).
   Widget _brand() {
-    return SizedBox(
-      width: 132,
-      child: Image.asset(
-        'assets/icon/wordmark.png',
-        key: const ValueKey('tv-rail-wordmark'),
-        height: 20,
-        fit: BoxFit.contain,
-        alignment: Alignment.centerLeft,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
+      child: AnimatedOpacity(
+        opacity: _navOpen ? 1 : 0,
+        duration: const Duration(milliseconds: 160),
+        child: Image.asset(
+          'assets/icon/wordmark.png',
+          key: const ValueKey('tv-rail-wordmark'),
+          height: 20,
+          fit: BoxFit.contain,
+          alignment: Alignment.centerLeft,
+        ),
       ),
     );
   }
 
-  /// Source switch pill on the right of the top nav (opens [TvSourcePicker]).
+  /// Source indicator — unchanged behaviour (opens [TvSourcePicker]); label
+  /// fades in when open.
   Widget _sourceIndicator() {
     return BlocBuilder<ActiveSourceCubit, String>(
       builder: (context, sourceId) {
@@ -230,22 +235,46 @@ class _RootShellTvState extends State<RootShellTv> {
           builder: (focused) {
             final label = _sourceLabel(sourceId);
             final clean = label.replaceFirst(RegExp(r'^(CS|Ani) · '), '');
-            final fg = focused ? Colors.black : AppColors.textSecondary;
+            final nameColor = focused ? Colors.black : AppColors.textPrimary;
+            final lblColor =
+                focused ? const Color(0xFF5A5A5A) : AppColors.textTertiary;
+            final iconColor = focused ? Colors.black : AppColors.textSecondary;
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.swap_horiz_rounded, size: 20, color: fg),
-                  const SizedBox(width: 8),
-                  Text(
-                    clean,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: fg,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                  Icon(Icons.swap_horiz_rounded, size: 26, color: iconColor),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: AnimatedOpacity(
+                      opacity: _navOpen ? 1 : 0,
+                      duration: const Duration(milliseconds: 160),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'SOURCE',
+                            style: TextStyle(
+                              color: lblColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            clean,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: nameColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -257,9 +286,7 @@ class _RootShellTvState extends State<RootShellTv> {
     );
   }
 
-  /// One text tab in the top nav. Active page = white/bold, others grey; the
-  /// focused tab gets the white pill.
-  Widget _navTab(int i, _RailItem item) {
+  Widget _navItem(int i, _RailItem item) {
     final selected = _index == i;
     return TvFocusable(
       variant: TvFocusVariant.pill,
@@ -269,16 +296,35 @@ class _RootShellTvState extends State<RootShellTv> {
             ? Colors.black
             : (selected ? AppColors.textPrimary : AppColors.textTertiary);
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-          child: Text(
-            item.label,
-            maxLines: 1,
-            softWrap: false,
-            style: TextStyle(
-              color: fg,
-              fontSize: 16,
-              fontWeight: (selected || focused) ? FontWeight.w700 : FontWeight.w500,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+          child: Row(
+            children: [
+              Icon(
+                selected ? item.selectedIcon : item.icon,
+                color: focused
+                    ? Colors.black
+                    : (selected ? AppColors.accent : AppColors.textTertiary),
+                size: 26,
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: AnimatedOpacity(
+                  opacity: _navOpen ? 1 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 18,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -291,7 +337,7 @@ class _RootShellTvState extends State<RootShellTv> {
       context: context,
       barrierColor: Colors.black54,
       builder: (dialogCtx) => Align(
-        alignment: const Alignment(0.9, -0.55), // near the profile (top-right)
+        alignment: const Alignment(-0.72, -0.42), // near the profile (top-left)
         child: TvLogoutSheet(
           onConfirm: () {
             Navigator.of(dialogCtx).pop();
@@ -303,13 +349,15 @@ class _RootShellTvState extends State<RootShellTv> {
     );
   }
 
-  /// Profile avatar on the far right of the top nav. Signed in → avatar (OK
-  /// opens the log-out popup); signed out → a placeholder (OK opens login).
+  /// Account row pinned to the BOTTOM of the drawer (like the mockup). Always
+  /// visible: signed in → avatar + name (OK opens the log-out popup); signed
+  /// out → a placeholder + "Sign in" (OK opens the TV login screen).
   Widget _avatarBlock() {
     return BlocBuilder<AuthCubit, AuthState>(
       builder: (context, auth) {
         final loggedIn = auth.isLoggedIn;
-        final name = loggedIn ? auth.displayName : '';
+        final name = loggedIn ? auth.displayName : 'Sign in';
+        final sub = loggedIn ? 'Signed in' : 'Sync your list';
         final avatar = auth.avatarUrl;
         final initial =
             (loggedIn && name.isNotEmpty) ? name[0].toUpperCase() : null;
@@ -326,25 +374,56 @@ class _RootShellTvState extends State<RootShellTv> {
             }
           },
           builder: (focused) => Padding(
-            padding: const EdgeInsets.all(6),
-            child: CircleAvatar(
-              radius: 19,
-              backgroundColor: focused ? Colors.white : AppColors.surface2,
-              backgroundImage: (avatar != null && avatar.isNotEmpty)
-                  ? NetworkImage(avatar)
-                  : null,
-              child: (avatar == null || avatar.isEmpty)
-                  ? (initial != null
-                      ? Text(initial,
-                          style: TextStyle(
-                              color: focused ? Colors.black : Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800))
-                      : Icon(Icons.person_rounded,
-                          color:
-                              focused ? Colors.black : AppColors.textSecondary,
-                          size: 24))
-                  : null,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 21,
+                  backgroundColor: AppColors.surface2,
+                  backgroundImage: (avatar != null && avatar.isNotEmpty)
+                      ? NetworkImage(avatar)
+                      : null,
+                  child: (avatar == null || avatar.isEmpty)
+                      ? (initial != null
+                          ? Text(initial,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800))
+                          : const Icon(Icons.person_rounded,
+                              color: AppColors.textSecondary, size: 26))
+                      : null,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: AnimatedOpacity(
+                    opacity: _navOpen ? 1 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: focused
+                                    ? Colors.black
+                                    : AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700)),
+                        Text(sub,
+                            maxLines: 1,
+                            style: TextStyle(
+                                color: focused
+                                    ? const Color(0xFF555555)
+                                    : AppColors.textTertiary,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -352,44 +431,40 @@ class _RootShellTvState extends State<RootShellTv> {
     );
   }
 
-  /// The Netflix-style top navigation bar: brand · tabs · source · profile.
-  Widget _topNav() {
-    return Container(
-      height: _kNavHeight,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xE6000000), Color(0x00000000)],
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            _brand(),
-            const SizedBox(width: 18),
-            // Tabs take the middle and scroll if the panel is ever too narrow,
-            // so the bar never overflows (and pushes source/profile to the far
-            // right on a wide TV).
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < _kRailItems.length; i++)
-                      _navTab(i, _kRailItems[i]),
-                  ],
-                ),
+  /// The full-width (expanded) drawer content column. It's ALWAYS laid out at
+  /// [_kNavExpanded] wide inside an OverflowBox and clipped to the animated
+  /// width, so collapsing/expanding just reveals more of the same column — the
+  /// labels fade via their own AnimatedOpacity.
+  Widget _railColumn() {
+    return SafeArea(
+      right: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 20),
+          _brand(), // Zangetsu wordmark, revealed when open
+          const SizedBox(height: 12),
+          _avatarBlock(), // profile
+          const SizedBox(height: 4),
+          _sourceIndicator(), // source switch right under the profile
+          const SizedBox(height: 8),
+          const Divider(
+              height: 1, color: AppColors.hairline, indent: 16, endIndent: 16),
+          const SizedBox(height: 8),
+          // Nav items in a flexible scroller so the column never overflows.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < _kRailItems.length; i++)
+                    _navItem(i, _kRailItems[i]),
+                ],
               ),
             ),
-            const SizedBox(width: 12),
-            _sourceIndicator(),
-            const SizedBox(width: 6),
-            _avatarBlock(),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+        ],
       ),
     );
   }
@@ -407,14 +482,18 @@ class _RootShellTvState extends State<RootShellTv> {
           backgroundColor: AppColors.bg,
           body: Stack(
             children: [
-              // Content fills the screen; a top inset keeps every page clear of
-              // the nav bar. UP from the top row jumps to the nav (edge-gated).
+              // ── Page area (fills the width; inset left by the collapsed rail
+              //    so content is never hidden behind it; the expanded drawer
+              //    overlays this inset — Apple-TV style). ────────────────────
               Positioned.fill(
+                left: _kNavCollapsed,
                 child: Focus(
                   focusNode: _contentScope,
                   onKeyEvent: _onContentKey,
                   child: Padding(
-                    padding: const EdgeInsets.only(top: _kNavHeight),
+                    // Overscan-safe inset (TVs crop edges). Left handled by the
+                    // rail inset above.
+                    padding: const EdgeInsets.fromLTRB(0, 24, 24, 16),
                     child: IndexedStack(
                       index: _index,
                       children: [
@@ -425,15 +504,48 @@ class _RootShellTvState extends State<RootShellTv> {
                   ),
                 ),
               ),
-              // Top nav overlay. DOWN from here drops into content.
+              // ── Drawer overlay (icon rail ⇄ full drawer) ──────────────────
               Positioned(
                 top: 0,
+                bottom: 0,
                 left: 0,
-                right: 0,
                 child: Focus(
                   focusNode: _railScope,
                   onKeyEvent: _onRailKey,
-                  child: _topNav(),
+                  // Expand while focus is anywhere in the rail zone; collapse
+                  // when it leaves (i.e. content is focused).
+                  onFocusChange: (hasFocus) {
+                    if (hasFocus != _navOpen) setState(() => _navOpen = hasFocus);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutCubic,
+                    width: _navOpen ? _kNavExpanded : _kNavCollapsed,
+                    margin: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF23242B), Color(0xFF141519)],
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          blurRadius: 40,
+                          offset: const Offset(0, 20),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: OverflowBox(
+                      minWidth: _kNavExpanded,
+                      maxWidth: _kNavExpanded,
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(width: _kNavExpanded, child: _railColumn()),
+                    ),
+                  ),
                 ),
               ),
             ],

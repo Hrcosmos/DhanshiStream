@@ -23,6 +23,7 @@ import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
 import '../../core/ui/featured_hero.dart';
 import '../../core/ui/list_status_sheet.dart';
+import '../../core/ui/poster_card.dart';
 import '../auth/auth_cubit.dart';
 import '../detail/detail_screen.dart';
 import '../player/tv_exo_player_screen.dart';
@@ -368,160 +369,127 @@ class TvRail extends StatelessWidget {
   final VoidCallback? onSeeAll;
   final bool firstAutofocus;
 
-  // Netflix-style landscape "tray" cards: 16:9 wide thumbnails, title below.
-  static const double _cardWidth = 300;
-  static const double _cardHeight = 169; // 300 * 9 / 16
+  static const double _cardWidth = 140;
+  static const double _cardHeight = 210;
 
   @override
   Widget build(BuildContext context) {
     final items = section.items;
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8),
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Section title
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 48),
             child: Text(
               section.title,
               style: const TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
+          // Card row
           SizedBox(
-            height: _cardHeight + 84, // art + title + focus lift headroom
+            // Extra vertical headroom so a focused card's float scale-up (+ the
+            // always-visible title below the poster) has room to grow instead of
+            // being clipped by the row: without it the taller focused card
+            // overflowed and the ListView cropped its title/poster (tester
+            // report). The card itself stays [_cardHeight] and is centred in the
+            // taller row, so unfocused cards look unchanged.
+            height: _cardHeight + 68,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
+              // Don't clip the focused card's scale-up + accent glow. Combined
+              // with the extra row headroom above, the top rail (pinned under
+              // the hero) no longer crops the focused poster/title.
               clipBehavior: Clip.none,
               padding: const EdgeInsets.symmetric(horizontal: 40),
+              // +1 trailing "See all" card (D-pad: navigate right past the last
+              // poster to reach it). Only when a handler is supplied.
               itemCount: items.length + (onSeeAll != null ? 1 : 0),
               itemBuilder: (context, index) {
-                if (index >= items.length) return _seeAllCard();
-                return _wideCard(items[index], firstAutofocus && index == 0);
+                if (index >= items.length) {
+                  // Trailing "See all" card — opens the full paginated grid.
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Center(
+                      child: SizedBox(
+                        width: _cardWidth,
+                        height: _cardHeight,
+                        child: TvFocusable(
+                          onTap: onSeeAll!,
+                          variant: TvFocusVariant.float,
+                          scale: 1.10,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.surface2,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: AppColors.textPrimary,
+                                  size: 28,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'See all',
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                final item = items[index];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: _cardWidth,
+                      // Premium "float" focus: the card lifts + scales + gets a
+                      // deep shadow, no ring. The title now always renders below
+                      // the poster (PosterCard.showTitle), so the card sizes to
+                      // poster + title instead of a fixed height.
+                      child: TvFocusable(
+                        autofocus: firstAutofocus && index == 0,
+                        variant: TvFocusVariant.float,
+                        scale: 1.08,
+                        onTap: () => onTap(item),
+                        child: PosterCard(
+                          title: item.title,
+                          imageUrl: item.cover,
+                          headers: item.coverHeaders,
+                          cellWidth: _cardWidth,
+                          showTitle: true,
+                          // Touch gestures are disabled on TV; TvFocusable
+                          // handles OK-key selection.
+                          onTap: null,
+                          onLongPress: null,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// A single wide 16:9 card with the title underneath and a bright border when
-  /// focused (Netflix tray style).
-  Widget _wideCard(MediaItem item, bool autofocus) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: SizedBox(
-        width: _cardWidth,
-        child: TvFocusable(
-          autofocus: autofocus,
-          variant: TvFocusVariant.float,
-          scale: 1.05,
-          onTap: () => onTap(item),
-          builder: (focused) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Stack(
-                  children: [
-                    SizedBox(
-                      width: _cardWidth,
-                      height: _cardHeight,
-                      child: (item.cover ?? '').isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: item.cover!,
-                              httpHeaders: item.coverHeaders,
-                              fit: BoxFit.cover,
-                              alignment: Alignment.topCenter,
-                              memCacheWidth: 600,
-                              placeholder: (_, _) =>
-                                  ColoredBox(color: AppColors.surface2),
-                              errorWidget: (_, _, _) =>
-                                  ColoredBox(color: AppColors.surface2),
-                            )
-                          : ColoredBox(color: AppColors.surface2),
-                    ),
-                    if (focused)
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white, width: 3),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: _cardWidth,
-                child: Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: focused ? Colors.white : AppColors.textSecondary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _seeAllCard() {
-    return Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: SizedBox(
-        width: _cardWidth,
-        child: TvFocusable(
-          onTap: onSeeAll!,
-          variant: TvFocusVariant.float,
-          scale: 1.05,
-          builder: (focused) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: _cardWidth,
-                height: _cardHeight,
-                decoration: BoxDecoration(
-                  color: AppColors.surface2,
-                  borderRadius: BorderRadius.circular(8),
-                  border:
-                      focused ? Border.all(color: Colors.white, width: 3) : null,
-                ),
-                alignment: Alignment.center,
-                child: const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.arrow_forward_rounded,
-                        color: AppColors.textPrimary, size: 30),
-                    SizedBox(height: 8),
-                    Text('See all',
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
       ),
     );
   }
