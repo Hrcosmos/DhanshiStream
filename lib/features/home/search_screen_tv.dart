@@ -124,7 +124,7 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w400,
                       ),
-                      cursorColor: AppColors.accent,
+                      cursorColor: Colors.white,
                       decoration: InputDecoration(
                         hintText: 'Search…',
                         hintStyle: AppText.title.copyWith(
@@ -143,9 +143,10 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                             width: 1,
                           ),
                         ),
-                        focusedBorder: UnderlineInputBorder(
+                        // White underline while typing — premium, not a red accent.
+                        focusedBorder: const UnderlineInputBorder(
                           borderSide: BorderSide(
-                            color: AppColors.accent,
+                            color: Colors.white,
                             width: 2,
                           ),
                         ),
@@ -177,8 +178,10 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                         .read<SearchBloc>()
                         .add(SearchScopeChanged(value)),
                     builder: (focused) {
+                      // Selected scope = solid white chip (black text); focus
+                      // renders the white pill on top. No red.
                       final bg = selected && !focused
-                          ? AppColors.accent
+                          ? Colors.white
                           : Colors.transparent;
                       final fg = (focused || selected)
                           ? Colors.black

@@ -708,10 +708,12 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
                                           _tabLabels[i],
                                           style: AppText.headline.copyWith(
                                             fontSize: 15,
+                                            // Active tab reads from bright white
+                                            // + bold, not a red tint.
                                             color: focused
                                                 ? Colors.black
                                                 : (_tab == i
-                                                    ? AppColors.accent
+                                                    ? AppColors.textPrimary
                                                     : AppColors.textSecondary),
                                             fontWeight: _tab == i
                                                 ? FontWeight.w700
@@ -983,9 +985,11 @@ class _TvSeasonChips extends StatelessWidget {
             builder: (focused) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               decoration: BoxDecoration(
+                // Current season = solid white chip (black text); focus adds the
+                // pill scale-up on top. No red.
                 color: focused
                     ? null
-                    : (selected ? AppColors.accent : AppColors.surface2),
+                    : (selected ? Colors.white : AppColors.surface2),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -993,7 +997,7 @@ class _TvSeasonChips extends StatelessWidget {
                 style: AppText.caption.copyWith(
                   color: focused
                       ? Colors.black
-                      : (selected ? Colors.white : AppColors.textPrimary),
+                      : (selected ? Colors.black : AppColors.textPrimary),
                   fontWeight: FontWeight.w600,
                 ),
               ),
