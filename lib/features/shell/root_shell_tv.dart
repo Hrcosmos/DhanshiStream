@@ -173,7 +173,22 @@ class _RootShellTvState extends State<RootShellTv> {
 
   void _onItemSelected(int i) {
     setState(() => _index = i);
-    if (i == _searchRailItem) _searchFocusSignal.value++;
+    if (i == _searchRailItem) {
+      // Search: the field autofocuses off this signal, which pulls focus out of
+      // the rail and collapses the drawer.
+      _searchFocusSignal.value++;
+      return;
+    }
+    // Every other section: hand focus to the freshly shown page so the drawer
+    // collapses and you land in the content — picking a section takes you into
+    // it (like tapping right), instead of leaving the nav open over the page.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _contentScope.traversalDescendants
+          .where((n) => n.canRequestFocus)
+          .firstOrNull
+          ?.requestFocus();
+    });
   }
 
   void _handlePopInvoked(bool didPop, dynamic result) {

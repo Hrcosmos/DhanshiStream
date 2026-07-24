@@ -258,4 +258,82 @@ void main() {
       );
     },
   );
+
+  // ── Selecting a nav item drops focus into the content (drawer collapses) ───
+
+  testWidgets(
+    'selecting a nav item moves focus into content so the drawer collapses',
+    (tester) async {
+      final railScope = FocusScopeNode(debugLabel: 'rail');
+      final contentScope = FocusScopeNode(debugLabel: 'content');
+      final railItemNode = FocusNode(debugLabel: 'rail-item');
+      final contentLeaf = FocusNode(debugLabel: 'content-leaf');
+
+      // Mirrors _onItemSelected's non-search branch: hand focus to the first
+      // content leaf post-frame, so the rail loses focus and the drawer (which
+      // expands only while the rail is focused) collapses.
+      void onSelect() {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          contentScope.traversalDescendants
+              .where((n) => n.canRequestFocus)
+              .firstOrNull
+              ?.requestFocus();
+        });
+      }
+
+      addTearDown(() {
+        railScope.dispose();
+        contentScope.dispose();
+        railItemNode.dispose();
+        contentLeaf.dispose();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Row(
+              children: [
+                Focus(
+                  focusNode: railScope,
+                  child: Focus(
+                    focusNode: railItemNode,
+                    child: const SizedBox(width: 100, height: 600),
+                  ),
+                ),
+                Expanded(
+                  child: Focus(
+                    focusNode: contentScope,
+                    child: Focus(
+                      focusNode: contentLeaf,
+                      child: const SizedBox(width: 400, height: 200),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Start focused in the rail (drawer would be open).
+      railItemNode.requestFocus();
+      await tester.pump();
+      expect(railItemNode.hasFocus, isTrue);
+
+      // Select a nav item.
+      onSelect();
+      await tester.pumpAndSettle();
+
+      // Focus is now in the content zone; the rail lost focus, so the drawer
+      // collapses via its onFocusChange.
+      expect(contentLeaf.hasFocus, isTrue);
+      expect(
+        railScope.hasFocus,
+        isFalse,
+        reason: 'selecting a nav item must hand focus to the content, '
+            'collapsing the drawer',
+      );
+    },
+  );
 }
