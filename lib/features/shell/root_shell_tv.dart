@@ -215,27 +215,35 @@ class _RootShellTvState extends State<RootShellTv> {
   /// (so the collapsed rail never looks blank), and the wordmark fades in beside
   /// it when the drawer opens.
   Widget _brand() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(13, 0, 12, 0),
-      child: Row(
-        children: [
-          Image.asset('assets/icon/app_icon.png', width: 32, height: 32),
-          const SizedBox(width: 14),
-          Expanded(
-            child: AnimatedOpacity(
-              opacity: _navOpen ? 1 : 0,
-              duration: const Duration(milliseconds: 160),
-              child: Image.asset(
-                'assets/icon/wordmark.png',
-                key: const ValueKey('tv-rail-wordmark'),
-                height: 18,
-                fit: BoxFit.contain,
-                alignment: Alignment.centerLeft,
-              ),
+    return Row(
+      children: [
+        // Logo centered in a slot the exact width of the collapsed rail, so it
+        // sits dead-centre when collapsed and lines up with the icons below.
+        SizedBox(
+          width: _kNavCollapsed,
+          child: Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: Image.asset('assets/icon/app_icon.png',
+                  width: 30, height: 30, fit: BoxFit.cover),
             ),
           ),
-        ],
-      ),
+        ),
+        Expanded(
+          child: AnimatedOpacity(
+            opacity: _navOpen ? 1 : 0,
+            duration: const Duration(milliseconds: 160),
+            child: Image.asset(
+              'assets/icon/wordmark.png',
+              key: const ValueKey('tv-rail-wordmark'),
+              height: 18,
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+      ],
     );
   }
 
@@ -265,11 +273,16 @@ class _RootShellTvState extends State<RootShellTv> {
                 focused ? const Color(0xFF5A5A5A) : AppColors.textTertiary;
             final iconColor = focused ? Colors.black : AppColors.textSecondary;
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: Row(
                 children: [
-                  Icon(Icons.swap_horiz_rounded, size: 26, color: iconColor),
-                  const SizedBox(width: 18),
+                  SizedBox(
+                    width: _kNavCollapsed,
+                    child: Center(
+                      child: Icon(Icons.swap_horiz_rounded,
+                          size: 26, color: iconColor),
+                    ),
+                  ),
                   Expanded(
                     child: AnimatedOpacity(
                       opacity: _navOpen ? 1 : 0,
@@ -302,6 +315,7 @@ class _RootShellTvState extends State<RootShellTv> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 12),
                 ],
               ),
             );
@@ -322,17 +336,21 @@ class _RootShellTvState extends State<RootShellTv> {
             ? Colors.black
             : (selected ? AppColors.textPrimary : AppColors.textTertiary);
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             children: [
-              Icon(
-                selected ? item.selectedIcon : item.icon,
-                color: focused
-                    ? Colors.black
-                    : (selected ? AppColors.accent : AppColors.textTertiary),
-                size: 26,
+              SizedBox(
+                width: _kNavCollapsed,
+                child: Center(
+                  child: Icon(
+                    selected ? item.selectedIcon : item.icon,
+                    color: focused
+                        ? Colors.black
+                        : (selected ? AppColors.accent : AppColors.textTertiary),
+                    size: 26,
+                  ),
+                ),
               ),
-              const SizedBox(width: 18),
               Expanded(
                 child: AnimatedOpacity(
                   opacity: _navOpen ? 1 : 0,
@@ -350,6 +368,7 @@ class _RootShellTvState extends State<RootShellTv> {
                   ),
                 ),
               ),
+              const SizedBox(width: 12),
             ],
           ),
         );
@@ -400,27 +419,31 @@ class _RootShellTvState extends State<RootShellTv> {
             }
           },
           builder: (focused) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 21,
-                  backgroundColor: AppColors.surface2,
-                  backgroundImage: (avatar != null && avatar.isNotEmpty)
-                      ? NetworkImage(avatar)
-                      : null,
-                  child: (avatar == null || avatar.isEmpty)
-                      ? (initial != null
-                          ? Text(initial,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800))
-                          : const Icon(Icons.person_rounded,
-                              color: AppColors.textSecondary, size: 26))
-                      : null,
+                SizedBox(
+                  width: _kNavCollapsed,
+                  child: Center(
+                    child: CircleAvatar(
+                      radius: 19,
+                      backgroundColor: AppColors.surface2,
+                      backgroundImage: (avatar != null && avatar.isNotEmpty)
+                          ? NetworkImage(avatar)
+                          : null,
+                      child: (avatar == null || avatar.isEmpty)
+                          ? (initial != null
+                              ? Text(initial,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800))
+                              : const Icon(Icons.person_rounded,
+                                  color: AppColors.textSecondary, size: 24))
+                          : null,
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 14),
                 Expanded(
                   child: AnimatedOpacity(
                     opacity: _navOpen ? 1 : 0,
@@ -449,6 +472,7 @@ class _RootShellTvState extends State<RootShellTv> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 12),
               ],
             ),
           ),
@@ -463,6 +487,7 @@ class _RootShellTvState extends State<RootShellTv> {
   /// labels fade via their own AnimatedOpacity.
   Widget _railColumn() {
     return SafeArea(
+      left: false,
       right: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
