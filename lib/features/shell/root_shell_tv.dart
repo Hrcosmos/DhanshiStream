@@ -346,7 +346,9 @@ class _RootShellTvState extends State<RootShellTv> {
                     selected ? item.selectedIcon : item.icon,
                     color: focused
                         ? Colors.black
-                        : (selected ? AppColors.accent : AppColors.textTertiary),
+                        // Active tab reads from the filled glyph + bright white,
+                        // not a red tint — keeps the rail premium and calm.
+                        : (selected ? AppColors.textPrimary : AppColors.textTertiary),
                     size: 26,
                   ),
                 ),
