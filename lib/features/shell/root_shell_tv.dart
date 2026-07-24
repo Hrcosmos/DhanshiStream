@@ -17,9 +17,10 @@ import '../schedule/schedule_screen.dart';
 import 'root_shell.dart';
 import 'tv_source_picker.dart';
 
-/// Collapsed (icon-only) and expanded (labelled) drawer widths.
-const double _kNavCollapsed = 96;
-const double _kNavExpanded = 320;
+/// Collapsed (icon-only) and expanded (labelled) drawer widths — kept narrow
+/// for a minimal Apple-TV feel.
+const double _kNavCollapsed = 78;
+const double _kNavExpanded = 312;
 
 /// TV-only navigation shell: a collapsing left drawer over an [IndexedStack].
 ///
@@ -421,11 +422,15 @@ class _RootShellTvState extends State<RootShellTv> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 22),
           _avatarBlock(), // profile at the TOP, Apple-TV style
-          const SizedBox(height: 14),
-          // Nav items live in a flexible middle so the source row always pins
-          // to the bottom and the column never overflows on shorter panels.
+          const SizedBox(height: 4),
+          _sourceIndicator(), // source switch right under the profile
+          const SizedBox(height: 8),
+          const Divider(
+              height: 1, color: AppColors.hairline, indent: 16, endIndent: 16),
+          const SizedBox(height: 8),
+          // Nav items in a flexible scroller so the column never overflows.
           Expanded(
             child: SingleChildScrollView(
               child: Column(
@@ -437,10 +442,6 @@ class _RootShellTvState extends State<RootShellTv> {
               ),
             ),
           ),
-          const Divider(
-              height: 1, color: AppColors.hairline, indent: 16, endIndent: 16),
-          const SizedBox(height: 6),
-          _sourceIndicator(), // source switch pinned to the bottom
           const SizedBox(height: 12),
         ],
       ),

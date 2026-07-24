@@ -920,24 +920,24 @@ class _TvHeroState extends State<_TvHero> {
   }
 
   Widget _playBtn() => Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 30),
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 22),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 24),
-            const SizedBox(width: 8),
+            Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 20),
+            const SizedBox(width: 7),
             Text(
               'Play',
               style: TextStyle(
                 fontFamily: 'Inter',
                 color: AppColors.bg,
                 fontWeight: FontWeight.w700,
-                fontSize: 17,
+                fontSize: 14,
               ),
             ),
           ],
@@ -946,25 +946,25 @@ class _TvHeroState extends State<_TvHero> {
 
   Widget _glassBtn(IconData icon, String label, {bool active = false}) =>
       Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 22),
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: active ? AppColors.accent : Colors.white, size: 20),
-            const SizedBox(width: 9),
+            Icon(icon, color: active ? AppColors.accent : Colors.white, size: 17),
+            const SizedBox(width: 7),
             Text(
               label,
               style: const TextStyle(
                 fontFamily: 'Inter',
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
-                fontSize: 16,
+                fontSize: 13.5,
               ),
             ),
           ],
