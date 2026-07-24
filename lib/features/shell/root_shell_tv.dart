@@ -207,6 +207,7 @@ class _RootShellTvState extends State<RootShellTv> {
               duration: const Duration(milliseconds: 160),
               child: Image.asset(
                 'assets/icon/wordmark.png',
+                key: const ValueKey('tv-rail-wordmark'),
                 height: 22,
                 fit: BoxFit.contain,
                 alignment: Alignment.centerLeft,
