@@ -159,6 +159,79 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                 ],
               ),
             ),
+            // ── Source scope (All sources / Current source) ─────────────────
+            BlocBuilder<SearchBloc, SearchState>(
+              buildWhen: (a, b) => a.currentSourceOnly != b.currentSourceOnly,
+              builder: (context, state) {
+                final current = state.currentSourceOnly;
+                Widget chip({
+                  required Key key,
+                  required String label,
+                  required IconData icon,
+                  required bool selected,
+                  required bool value,
+                }) {
+                  return TvFocusable(
+                    key: key,
+                    variant: TvFocusVariant.pill,
+                    onTap: () => context
+                        .read<SearchBloc>()
+                        .add(SearchScopeChanged(value)),
+                    builder: (focused) {
+                      final bg = selected && !focused
+                          ? AppColors.accent
+                          : Colors.transparent;
+                      final fg = (focused || selected)
+                          ? Colors.black
+                          : AppColors.textSecondary;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: focused ? null : bg,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 11),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(icon, size: 18, color: fg),
+                            const SizedBox(width: 8),
+                            Text(label,
+                                style: TextStyle(
+                                    color: fg,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(48, 0, 48, 12),
+                  child: Row(
+                    children: [
+                      chip(
+                        key: const ValueKey('tv-search-scope-all'),
+                        label: 'All sources',
+                        icon: Icons.travel_explore_rounded,
+                        selected: !current,
+                        value: false,
+                      ),
+                      const SizedBox(width: 10),
+                      chip(
+                        key: const ValueKey('tv-search-scope-current'),
+                        label: 'Current source',
+                        icon: Icons.filter_center_focus_rounded,
+                        selected: current,
+                        value: true,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             // ── Results / states ──────────────────────────────────────────────
             Expanded(
               child: BlocBuilder<SearchBloc, SearchState>(
@@ -238,7 +311,8 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
       padding: const EdgeInsets.fromLTRB(40, 0, 40, 40),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _crossAxisCount,
-        childAspectRatio: 0.62,
+        // Extra headroom vs the old 0.62 — titles now render below the poster.
+        childAspectRatio: 0.55,
         crossAxisSpacing: 16,
         mainAxisSpacing: 20,
       ),
@@ -249,15 +323,16 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
           // First result gets autofocus so D-pad DOWN from the search field
           // lands here immediately after results populate.
           autofocus: i == 0,
+          variant: TvFocusVariant.float,
+          scale: 1.12,
           onTap: () => _openDetail(item),
-          focusLabel: item.title,
           child: PosterCard(
             title: item.title,
             imageUrl: item.cover,
             headers: item.coverHeaders,
             tags: _tagsFor(item),
             cellWidth: _cardWidth,
-            showTitle: false,
+            showTitle: true,
             // Touch gestures disabled on TV; [TvFocusable] handles OK-key.
             onTap: null,
             onLongPress: null,

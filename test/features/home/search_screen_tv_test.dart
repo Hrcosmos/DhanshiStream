@@ -150,8 +150,13 @@ void main() {
       await tester.pump();
 
       expect(find.text('Search for something to watch'), findsOneWidget);
-      // No TvFocusable result cards in idle state.
-      expect(find.byType(TvFocusable), findsNothing);
+      // The scope chips are always visible (2 TvFocusables), but no result
+      // cards exist in idle state.
+      expect(find.byType(TvFocusable), findsNWidgets(2));
+      expect(
+        find.byKey(const ValueKey('tv-search-scope-current')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -182,14 +187,17 @@ void main() {
       expect(find.text('Attack on Titan'), findsOneWidget);
       expect(find.text('Demon Slayer'), findsOneWidget);
 
-      // Each result card is wrapped in TvFocusable.
+      // Each result card is wrapped in TvFocusable (plus the 2 scope chips
+      // that render above the results regardless of state).
       final focusables =
           tester.widgetList<TvFocusable>(find.byType(TvFocusable)).toList();
-      expect(focusables.length, greaterThanOrEqualTo(2));
+      expect(focusables.length, greaterThanOrEqualTo(4));
 
-      // The very first TvFocusable (first result card) carries autofocus=true
+      // The first result card (not the scope chips) carries autofocus=true
       // so D-pad DOWN from the search field lands here immediately.
-      expect(focusables.first.autofocus, isTrue);
+      final firstCard = focusables.firstWhere((f) => f.autofocus);
+      expect(firstCard.key, isNot(const ValueKey('tv-search-scope-current')));
+      expect(firstCard.key, isNot(const ValueKey('tv-search-scope-all')));
     },
   );
 
