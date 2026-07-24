@@ -63,7 +63,8 @@ class MyListScreenTv extends StatelessWidget {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: _crossAxisCount,
-                      childAspectRatio: 0.62,
+                      // Extra headroom vs the old 0.62 — titles now render below the poster.
+                      childAspectRatio: 0.55,
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 20,
                     ),
@@ -72,14 +73,15 @@ class MyListScreenTv extends StatelessWidget {
                       final entry = entries[i];
                       return TvFocusable(
                         autofocus: i == 0,
+                        variant: TvFocusVariant.float,
+                        scale: 1.12,
                         onTap: () => _openItem(context, entry.item),
-                        focusLabel: entry.item.title,
                         child: PosterCard(
                           title: entry.item.title,
                           imageUrl: entry.item.cover,
                           headers: entry.item.coverHeaders,
                           cellWidth: _cardWidth,
-                          showTitle: false,
+                          showTitle: true,
                           // Touch gestures are disabled on TV; [TvFocusable]
                           // handles OK-key selection.
                           onTap: null,

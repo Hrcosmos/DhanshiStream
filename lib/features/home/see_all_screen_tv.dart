@@ -147,7 +147,8 @@ class _SeeAllScreenTvState extends State<SeeAllScreenTv> {
             cacheExtent: 800,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _crossAxisCount,
-              childAspectRatio: 0.62,
+              // Extra headroom vs the old 0.62 — titles now render below the poster.
+              childAspectRatio: 0.55,
               crossAxisSpacing: 16,
               mainAxisSpacing: 20,
             ),
@@ -157,15 +158,16 @@ class _SeeAllScreenTvState extends State<SeeAllScreenTv> {
               final item = _items[i];
               return TvFocusable(
                 autofocus: i == 0,
+                variant: TvFocusVariant.float,
+                scale: 1.12,
                 onTap: () => widget.onTap(item),
-                focusLabel: item.title,
                 child: PosterCard(
                   title: item.title,
                   imageUrl: item.cover,
                   headers: item.coverHeaders,
                   tags: widget.tagsFor?.call(item) ?? const [],
                   cellWidth: _cardWidth,
-                  showTitle: false,
+                  showTitle: true,
                   // Touch gestures are disabled on TV; [TvFocusable] handles
                   // OK-key selection.
                   onTap: null,
