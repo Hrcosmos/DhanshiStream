@@ -697,9 +697,9 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
                                     padding: const EdgeInsets.only(right: 4),
                                     child: TvFocusable(
                                       key: ValueKey('tv-detail-tab-$i'),
+                                      variant: TvFocusVariant.pill,
                                       onTap: () => setState(() => _tab = i),
-                                      scale: 1.04,
-                                      child: Padding(
+                                      builder: (focused) => Padding(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 14,
                                           vertical: 8,
@@ -708,9 +708,11 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
                                           _tabLabels[i],
                                           style: AppText.headline.copyWith(
                                             fontSize: 15,
-                                            color: _tab == i
-                                                ? AppColors.accent
-                                                : AppColors.textSecondary,
+                                            color: focused
+                                                ? Colors.black
+                                                : (_tab == i
+                                                    ? AppColors.accent
+                                                    : AppColors.textSecondary),
                                             fontWeight: _tab == i
                                                 ? FontWeight.w700
                                                 : FontWeight.w500,
@@ -976,17 +978,22 @@ class _TvSeasonChips extends StatelessWidget {
           final selected = s == currentSeason;
           return TvFocusable(
             key: ValueKey('tv-season-$s'),
+            variant: TvFocusVariant.pill,
             onTap: () => onSelect(s),
-            child: Container(
+            builder: (focused) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               decoration: BoxDecoration(
-                color: selected ? AppColors.accent : AppColors.surface2,
+                color: focused
+                    ? null
+                    : (selected ? AppColors.accent : AppColors.surface2),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
                 'Season $s',
                 style: AppText.caption.copyWith(
-                  color: selected ? Colors.white : AppColors.textPrimary,
+                  color: focused
+                      ? Colors.black
+                      : (selected ? Colors.white : AppColors.textPrimary),
                   fontWeight: FontWeight.w600,
                 ),
               ),
