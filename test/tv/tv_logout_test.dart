@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:watch_app/core/tv/tv_focusable.dart';
 
 // The log-out confirm content is extracted as a top-level widget so it can be
 // tested without booting the whole shell/DI. See tvLogoutSheet() in
