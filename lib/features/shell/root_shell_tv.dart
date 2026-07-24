@@ -489,8 +489,19 @@ class _RootShellTvState extends State<RootShellTv> {
           const SizedBox(height: 6),
           const Divider(height: 1, color: AppColors.hairline, indent: 16, endIndent: 16),
           const SizedBox(height: 8),
-          for (var i = 0; i < _kRailItems.length; i++) _navItem(i, _kRailItems[i]),
-          const Spacer(),
+          // Nav items live in a flexible middle so the account row always pins
+          // to the bottom and the column never overflows on shorter panels.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < _kRailItems.length; i++)
+                    _navItem(i, _kRailItems[i]),
+                ],
+              ),
+            ),
+          ),
           _avatarBlock(),
           const SizedBox(height: 12),
         ],
