@@ -15,7 +15,6 @@ import '../../core/playback/watch_history.dart';
 import '../../core/repository/source_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/tv/tv_focusable.dart';
-import '../../core/ui/continue_card.dart';
 import '../../core/ui/featured_carousel.dart';
 import '../../core/ui/featured_hero.dart';
 import '../../core/ui/list_status_sheet.dart';
@@ -312,7 +311,7 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
           // ── Poster rails (one per section) ──────────────────────────────
           for (var i = 0; i < sections.length; i++)
             SliverToBoxAdapter(
-              child: _TvRail(
+              child: TvRail(
                 section: sections[i],
                 onTap: _openDetail,
                 onSeeAll: () => _openSeeAll(sections[i]),
@@ -348,8 +347,11 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
 // ── Poster Rail ───────────────────────────────────────────────────────────────
 
 /// One labelled horizontal row of D-pad-focusable poster cards for a [HomeSection].
-class _TvRail extends StatelessWidget {
-  const _TvRail({
+/// Public (not `_TvRail`) + [visibleForTesting] so tests can pump it directly.
+@visibleForTesting
+class TvRail extends StatelessWidget {
+  const TvRail({
+    super.key,
     required this.section,
     required this.onTap,
     this.onSeeAll,
@@ -387,12 +389,13 @@ class _TvRail extends StatelessWidget {
           const SizedBox(height: 12),
           // Card row
           SizedBox(
-            // Extra vertical headroom so a focused card's 1.08 scale-up has room
-            // to grow instead of being clipped by the row: without it the taller
-            // focused card overflowed and the ListView cropped its title/poster
-            // (tester report). The card itself stays [_cardHeight] and is centred
-            // in the taller row, so unfocused cards look unchanged.
-            height: _cardHeight + 40,
+            // Extra vertical headroom so a focused card's float scale-up (+ the
+            // always-visible title below the poster) has room to grow instead of
+            // being clipped by the row: without it the taller focused card
+            // overflowed and the ListView cropped its title/poster (tester
+            // report). The card itself stays [_cardHeight] and is centred in the
+            // taller row, so unfocused cards look unchanged.
+            height: _cardHeight + 90,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               // Don't clip the focused card's scale-up + accent glow. Combined
@@ -414,6 +417,8 @@ class _TvRail extends StatelessWidget {
                         height: _cardHeight,
                         child: TvFocusable(
                           onTap: onSeeAll!,
+                          variant: TvFocusVariant.float,
+                          scale: 1.10,
                           child: Container(
                             decoration: BoxDecoration(
                               color: AppColors.surface2,
@@ -451,27 +456,25 @@ class _TvRail extends StatelessWidget {
                   child: Center(
                     child: SizedBox(
                       width: _cardWidth,
-                      // Focus is a clean box around the poster art; the title is
-                      // overlaid on the poster's bottom and pops into a white
-                      // chip when focused (Netflix-style).
+                      // Premium "float" focus: the card lifts + scales + gets a
+                      // deep shadow, no ring. The title now always renders below
+                      // the poster (PosterCard.showTitle), so the card sizes to
+                      // poster + title instead of a fixed height.
                       child: TvFocusable(
                         autofocus: firstAutofocus && index == 0,
+                        variant: TvFocusVariant.float,
+                        scale: 1.14,
                         onTap: () => onTap(item),
-                        focusLabel: item.title,
-                        child: SizedBox(
-                          width: _cardWidth,
-                          height: _cardHeight,
-                          child: PosterCard(
-                            title: item.title,
-                            imageUrl: item.cover,
-                            headers: item.coverHeaders,
-                            cellWidth: _cardWidth,
-                            showTitle: false,
-                            // Touch gestures are disabled on TV; TvFocusable
-                            // handles OK-key selection.
-                            onTap: null,
-                            onLongPress: null,
-                          ),
+                        child: PosterCard(
+                          title: item.title,
+                          imageUrl: item.cover,
+                          headers: item.coverHeaders,
+                          cellWidth: _cardWidth,
+                          showTitle: true,
+                          // Touch gestures are disabled on TV; TvFocusable
+                          // handles OK-key selection.
+                          onTap: null,
+                          onLongPress: null,
                         ),
                       ),
                     ),
@@ -502,8 +505,10 @@ class _TvContinueRail extends StatelessWidget {
   final void Function(HistoryEntry) onResume;
   final bool firstAutofocus;
 
-  static const double _cardWidth = 140;
-  static const double _cardHeight = 236;
+  // Landscape (16:9) art reads better than the phone's portrait ContinueCard on
+  // a TV row — it's what Netflix/Disney+ TV apps do too.
+  static const double _cardWidth = 300;
+  static const double _cardHeight = 176; // 16:9 of 300
 
   @override
   Widget build(BuildContext context) {
@@ -525,7 +530,7 @@ class _TvContinueRail extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: _cardHeight + 40,
+            height: _cardHeight + 90,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -540,29 +545,96 @@ class _TvContinueRail extends StatelessWidget {
                       width: _cardWidth,
                       child: TvFocusable(
                         autofocus: firstAutofocus && index == 0,
+                        variant: TvFocusVariant.float,
+                        scale: 1.08,
                         onTap: () => onResume(e),
-                        child: SizedBox(
-                          width: _cardWidth,
-                          height: _cardHeight,
-                          child: ContinueCard(
-                            title: e.showTitle,
-                            imageUrl: e.cover,
-                            headers: e.coverHeaders,
-                            progress: e.progress,
-                            cellWidth: _cardWidth,
-                            subtitle: e.episodeNumber != null
-                                ? 'Episode ${e.episodeNumber!.toInt()}'
-                                : null,
-                            onTap: null,
-                            onLongPress: null,
-                          ),
-                        ),
+                        child: _TvContinueCard(entry: e, width: _cardWidth),
                       ),
                     ),
                   ),
                 );
               },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// TV-only LANDSCAPE Continue Watching card (16:9 art + progress overlay, with
+/// the title and "Continue · E{n}" below). Landscape reads better on TV than
+/// the shared portrait ContinueCard; that shared widget is left untouched for
+/// the phone.
+class _TvContinueCard extends StatelessWidget {
+  const _TvContinueCard({required this.entry, required this.width});
+  final HistoryEntry entry;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = entry;
+    final sub = e.episodeNumber != null
+        ? 'Continue · E${e.episodeNumber!.toInt()}'
+        : 'Continue';
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if ((e.cover ?? '').isNotEmpty)
+                    Image.network(
+                      e.cover!,
+                      headers: e.coverHeaders,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          ColoredBox(color: AppColors.surface2),
+                    )
+                  else
+                    ColoredBox(color: AppColors.surface2),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      height: 5,
+                      color: Colors.black.withValues(alpha: 0.55),
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: e.progress.clamp(0.0, 1.0),
+                        child: Container(color: AppColors.accent),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            e.showTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
         ],
       ),
