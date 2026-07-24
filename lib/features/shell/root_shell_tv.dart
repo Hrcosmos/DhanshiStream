@@ -10,6 +10,7 @@ import '../../core/state/active_source_cubit.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
+import '../auth/auth_cubit.dart';
 import '../downloads/downloads_screen.dart';
 import '../home/cubit/home_cubit.dart';
 import '../schedule/schedule_screen.dart';
@@ -314,8 +315,85 @@ class _RootShellTvState extends State<RootShellTv> {
     );
   }
 
-  // Filled in by Task 3. Returns SizedBox.shrink() until then.
-  Widget _avatarBlock() => const SizedBox.shrink();
+  Future<void> _confirmLogout() async {
+    final auth = context.read<AuthCubit>();
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogCtx) => Align(
+        alignment: const Alignment(-0.72, 0.55), // near the avatar (lower-left)
+        child: TvLogoutSheet(
+          onConfirm: () {
+            Navigator.of(dialogCtx).pop();
+            auth.logout();
+          },
+          onCancel: () => Navigator.of(dialogCtx).pop(),
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarBlock() {
+    return BlocBuilder<AuthCubit, AuthState>(
+      builder: (context, auth) {
+        if (!auth.isLoggedIn) return const SizedBox.shrink();
+        final name = auth.displayName;
+        final avatar = auth.avatarUrl;
+        final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+        return TvFocusable(
+          key: const ValueKey('tv-nav-avatar'),
+          variant: TvFocusVariant.pill,
+          onTap: _confirmLogout,
+          builder: (focused) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: AppColors.surface2,
+                  backgroundImage: (avatar != null && avatar.isNotEmpty)
+                      ? NetworkImage(avatar)
+                      : null,
+                  child: (avatar == null || avatar.isEmpty)
+                      ? Text(initial,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800))
+                      : null,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: AnimatedOpacity(
+                    opacity: _navOpen ? 1 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: focused ? Colors.black : AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700)),
+                        Text('Signed in',
+                            maxLines: 1,
+                            style: TextStyle(
+                                color: focused ? const Color(0xFF555555) : AppColors.textTertiary,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   /// The full-width (expanded) drawer content column. It's ALWAYS laid out at
   /// [_kNavExpanded] wide inside an OverflowBox and clipped to the animated
@@ -425,6 +503,76 @@ class _RootShellTvState extends State<RootShellTv> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Compact "Log out?" confirm card shown from the nav avatar. Kept top-level so
+/// it can be widget-tested without the shell/DI. The "Log out" action
+/// autofocuses; Back dismisses the hosting dialog.
+class TvLogoutSheet extends StatelessWidget {
+  const TvLogoutSheet({super.key, required this.onConfirm, this.onCancel});
+  final VoidCallback onConfirm;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 300,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E0F13),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TvFocusable(
+            autofocus: true,
+            variant: TvFocusVariant.pill,
+            onTap: onConfirm,
+            builder: (focused) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+              child: Row(
+                children: [
+                  Icon(Icons.logout_rounded,
+                      size: 20,
+                      color: focused ? Colors.black : const Color(0xFFFF5C5C)),
+                  const SizedBox(width: 12),
+                  Text('Log out',
+                      style: TextStyle(
+                        color: focused ? Colors.black : const Color(0xFFFF5C5C),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      )),
+                ],
+              ),
+            ),
+          ),
+          TvFocusable(
+            variant: TvFocusVariant.pill,
+            onTap: onCancel ?? () {},
+            builder: (focused) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+              child: Row(
+                children: [
+                  Icon(Icons.close_rounded,
+                      size: 20,
+                      color: focused ? Colors.black : AppColors.textSecondary),
+                  const SizedBox(width: 12),
+                  Text('Cancel',
+                      style: TextStyle(
+                        color: focused ? Colors.black : AppColors.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      )),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
