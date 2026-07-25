@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:watch_app/core/theme/app_colors.dart';
 import 'package:watch_app/core/tv/tv_focusable.dart';
 
 void main() {
@@ -21,7 +20,7 @@ void main() {
   });
 
   testWidgets(
-    'TvFocusable focused border uses accent color, not white',
+    'TvFocusable focused border is a white outline',
     (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: TvFocusable(
@@ -32,7 +31,8 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // When focused, the DecoratedBox should use the accent color border.
+      // When focused, the DecoratedBox uses a clean white outline (premium,
+      // no accent tint).
       final decoratedBox =
           tester.widget<DecoratedBox>(find.byType(DecoratedBox).first);
       final decoration = decoratedBox.decoration as BoxDecoration;
@@ -41,7 +41,7 @@ void main() {
         isA<Border>().having(
           (b) => b.top.color,
           'top border color',
-          AppColors.accent,
+          Colors.white,
         ),
       );
     },

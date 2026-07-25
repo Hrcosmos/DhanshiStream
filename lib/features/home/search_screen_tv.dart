@@ -6,7 +6,7 @@ import '../../core/models/media_item.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
-import '../../core/ui/poster_card.dart';
+import '../../core/tv/tv_poster_tile.dart';
 import '../../core/ui/states.dart';
 import '../detail/detail_screen.dart';
 import '../search/bloc/search_bloc.dart';
@@ -40,7 +40,6 @@ class SearchScreenTv extends StatefulWidget {
 class _SearchScreenTvState extends State<SearchScreenTv> {
   /// 6 columns fills a 1920-wide TV at ~140 dp card width with comfortable gaps.
   static const int _crossAxisCount = 6;
-  static const double _cardWidth = 130.0;
 
   late final TextEditingController _controller;
   // DOWN from the field must LEAVE it (which closes the TV keyboard) and drop
@@ -125,7 +124,7 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w400,
                       ),
-                      cursorColor: AppColors.accent,
+                      cursorColor: Colors.white,
                       decoration: InputDecoration(
                         hintText: 'Search…',
                         hintStyle: AppText.title.copyWith(
@@ -144,9 +143,10 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                             width: 1,
                           ),
                         ),
-                        focusedBorder: UnderlineInputBorder(
+                        // White underline while typing — premium, not a red accent.
+                        focusedBorder: const UnderlineInputBorder(
                           borderSide: BorderSide(
-                            color: AppColors.accent,
+                            color: Colors.white,
                             width: 2,
                           ),
                         ),
@@ -158,6 +158,81 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                   ),
                 ],
               ),
+            ),
+            // ── Source scope (All sources / Current source) ─────────────────
+            BlocBuilder<SearchBloc, SearchState>(
+              buildWhen: (a, b) => a.currentSourceOnly != b.currentSourceOnly,
+              builder: (context, state) {
+                final current = state.currentSourceOnly;
+                Widget chip({
+                  required Key key,
+                  required String label,
+                  required IconData icon,
+                  required bool selected,
+                  required bool value,
+                }) {
+                  return TvFocusable(
+                    key: key,
+                    variant: TvFocusVariant.pill,
+                    onTap: () => context
+                        .read<SearchBloc>()
+                        .add(SearchScopeChanged(value)),
+                    builder: (focused) {
+                      // Selected scope = solid white chip (black text); focus
+                      // renders the white pill on top. No red.
+                      final bg = selected && !focused
+                          ? Colors.white
+                          : Colors.transparent;
+                      final fg = (focused || selected)
+                          ? Colors.black
+                          : AppColors.textSecondary;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: focused ? null : bg,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 11),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(icon, size: 18, color: fg),
+                            const SizedBox(width: 8),
+                            Text(label,
+                                style: TextStyle(
+                                    color: fg,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(48, 0, 48, 12),
+                  child: Row(
+                    children: [
+                      chip(
+                        key: const ValueKey('tv-search-scope-all'),
+                        label: 'All sources',
+                        icon: Icons.travel_explore_rounded,
+                        selected: !current,
+                        value: false,
+                      ),
+                      const SizedBox(width: 10),
+                      chip(
+                        key: const ValueKey('tv-search-scope-current'),
+                        label: 'Current source',
+                        icon: Icons.filter_center_focus_rounded,
+                        selected: current,
+                        value: true,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             // ── Results / states ──────────────────────────────────────────────
             Expanded(
@@ -238,30 +313,22 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
       padding: const EdgeInsets.fromLTRB(40, 0, 40, 40),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _crossAxisCount,
-        childAspectRatio: 0.62,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 20,
+        // Poster art + title below (outline hugs the art).
+        childAspectRatio: 0.56,
+        crossAxisSpacing: 18,
+        mainAxisSpacing: 22,
       ),
       itemCount: items.length,
       itemBuilder: (context, i) {
         final item = items[i];
-        return TvFocusable(
-          // First result gets autofocus so D-pad DOWN from the search field
-          // lands here immediately after results populate.
+        // First result gets autofocus so D-pad DOWN from the field lands here.
+        return TvPosterTile(
           autofocus: i == 0,
+          title: item.title,
+          imageUrl: item.cover,
+          headers: item.coverHeaders,
+          tags: _tagsFor(item),
           onTap: () => _openDetail(item),
-          focusLabel: item.title,
-          child: PosterCard(
-            title: item.title,
-            imageUrl: item.cover,
-            headers: item.coverHeaders,
-            tags: _tagsFor(item),
-            cellWidth: _cardWidth,
-            showTitle: false,
-            // Touch gestures disabled on TV; [TvFocusable] handles OK-key.
-            onTap: null,
-            onLongPress: null,
-          ),
         );
       },
     );
