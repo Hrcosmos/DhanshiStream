@@ -33,7 +33,13 @@ class OpenLinkService {
   void _onLink(Uri uri) {
     // zangetsu://pair?code=CODE — a TV pairing QR scanned on the phone.
     if (uri.host == 'pair') {
-      _openPair(uri.queryParameters['code']);
+      final code = uri.queryParameters['code'];
+      final nonce = uri.queryParameters['nonce'];
+      if (uri.queryParameters['trackers'] == '1') {
+        _openSendTrackers(code, nonce); // Flow B — added in Task 11
+      } else {
+        _openPair(code, nonce);
+      }
       return;
     }
     final item = ShareLink.parse(uri);
@@ -43,19 +49,23 @@ class OpenLinkService {
 
   /// Open the phone's "Pair a TV" screen prefilled with the scanned code.
   /// Waits (cold-start safe) for the root Navigator, like [_open].
-  void _openPair(String? code, [int attempt = 0]) {
+  void _openPair(String? code, String? nonce, [int attempt = 0]) {
     final nav = rootNavigatorKey.currentState;
     if (nav == null) {
       if (attempt < 20) {
         Future.delayed(
           const Duration(milliseconds: 250),
-          () => _openPair(code, attempt + 1),
+          () => _openPair(code, nonce, attempt + 1),
         );
       }
       return;
     }
-    nav.push(PairTvScreen.route(code));
+    nav.push(PairTvScreen.route(code, nonce));
   }
+
+  // ponytail: Flow B (a signed-in TV requesting just the trackers, no account
+  // pairing) lands in Task 11 — this stub keeps Flow A compiling on its own.
+  void _openSendTrackers(String? code, String? nonce) {}
 
   /// Waits (briefly, cold-start safe) for the root Navigator to exist, then
   /// either opens the Detail or shows a "source not installed" toast.

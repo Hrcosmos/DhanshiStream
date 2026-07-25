@@ -5,6 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/di/injector.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
+import '../../core/tracker/relay/tracker_relay.dart';
+import '../../core/tracker/relay/tracker_relay_crypto.dart';
 import 'auth_cubit.dart';
 import 'tv_pairing_service.dart';
 
@@ -12,11 +14,12 @@ import 'tv_pairing_service.dart';
 /// via the `zangetsu://pair` QR deep-link), confirm the device, and sign the TV
 /// into this account. Requires the phone to be signed in.
 class PairTvScreen extends StatefulWidget {
-  const PairTvScreen({super.key, this.initialCode});
+  const PairTvScreen({super.key, this.initialCode, this.nonce});
   final String? initialCode;
+  final String? nonce;
 
-  static Route<void> route([String? code]) =>
-      MaterialPageRoute(builder: (_) => PairTvScreen(initialCode: code));
+  static Route<void> route([String? code, String? nonce]) => MaterialPageRoute(
+      builder: (_) => PairTvScreen(initialCode: code, nonce: nonce));
 
   @override
   State<PairTvScreen> createState() => _PairTvScreenState();
@@ -77,7 +80,8 @@ class _PairTvScreenState extends State<PairTvScreen> {
       _busy = true;
       _error = null;
     });
-    final ok = await _svc.approve(_code.text.trim());
+    final blob = _buildTrackerBlob();
+    final ok = await _svc.approve(_code.text.trim(), trackerBlob: blob);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -87,6 +91,20 @@ class _PairTvScreenState extends State<PairTvScreen> {
         _error = 'Approval failed. Try again.';
       }
     });
+  }
+
+  /// Encrypted bundle of the phone's connected trackers, or null when there's
+  /// no nonce (manually-typed code) or nothing connected. Never blocks approve.
+  String? _buildTrackerBlob() {
+    final nonce = widget.nonce;
+    if (nonce == null || nonce.isEmpty) return null;
+    try {
+      final packed = sl<TrackerRelay>().pack();
+      if (packed.trackers.isEmpty) return null;
+      return TrackerRelayCrypto.encrypt(packed.encode(), nonce);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -158,6 +176,15 @@ class _PairTvScreenState extends State<PairTvScreen> {
           const SizedBox(height: 8),
           Text('This TV will sign into your account. You can sign it out later.',
               style: AppText.body.copyWith(color: AppColors.textSecondary)),
+          if (widget.nonce != null) ...[
+            const SizedBox(height: 12),
+            Row(children: [
+              const Icon(Icons.sync_rounded, size: 16, color: AppColors.textSecondary),
+              const SizedBox(width: 6),
+              Expanded(child: Text('Also send your trackers (AniList, MyAnimeList, Simkl)',
+                  style: AppText.caption.copyWith(color: AppColors.textSecondary))),
+            ]),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!, style: AppText.caption.copyWith(color: Colors.redAccent)),
