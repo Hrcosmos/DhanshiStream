@@ -47,47 +47,63 @@ class _ConnectionsScreenTvState extends State<ConnectionsScreenTv> {
         automaticallyImplyLeading: false,
         title: Text('Connections', style: AppText.headline),
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(40, 8, 40, 40),
-        itemCount: _rows.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 14),
-        itemBuilder: (context, i) {
-          final r = _rows[i];
-          final connected = r.t.isConnected;
-          final who = connected ? (r.t.viewerName ?? 'Connected') : 'Not connected';
-          return TvFocusable(
-            autofocus: i == 0,
-            scale: 1.0,
-            foregroundHighlight: true,
-            onTap: () => connected ? _disconnect(r.t) : _connect(r.id),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(40, 8, 40, 40),
+              itemCount: _rows.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 14),
+              itemBuilder: (context, i) {
+                final r = _rows[i];
+                final connected = r.t.isConnected;
+                final who = connected
+                    ? (r.t.viewerName != null ? 'Connected as ${r.t.viewerName}' : 'Connected')
+                    : 'Not connected';
+                return TvFocusable(
+                  autofocus: i == 0,
+                  scale: 1.0,
+                  foregroundHighlight: true,
+                  onTap: () => connected ? _disconnect(r.t) : _connect(r.id),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
                       children: [
-                        Text(r.label, style: AppText.headline.copyWith(fontSize: 17)),
-                        const SizedBox(height: 3),
-                        Text(who, style: AppText.caption.copyWith(
-                            color: connected ? AppColors.textSecondary : AppColors.textTertiary)),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(r.label, style: AppText.headline.copyWith(fontSize: 17)),
+                              const SizedBox(height: 3),
+                              Text(who, style: AppText.caption.copyWith(
+                                  color: connected ? AppColors.textSecondary : AppColors.textTertiary)),
+                            ],
+                          ),
+                        ),
+                        Text(connected ? 'Disconnect' : 'Connect',
+                            style: AppText.body.copyWith(
+                                color: connected ? Colors.redAccent : AppColors.textPrimary,
+                                fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
-                  Text(connected ? 'Disconnect' : 'Connect',
-                      style: AppText.body.copyWith(
-                          color: connected ? Colors.redAccent : AppColors.textPrimary,
-                          fontWeight: FontWeight.w700)),
-                ],
-              ),
+                );
+              },
             ),
-          );
-        },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(40, 0, 40, 40),
+            child: Text(
+              'Disconnecting here only signs this tracker out on the TV — your phone stays connected.',
+              style: AppText.caption.copyWith(color: AppColors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
       ),
     );
   }
