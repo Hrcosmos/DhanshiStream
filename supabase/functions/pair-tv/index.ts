@@ -34,12 +34,19 @@ Deno.serve(async (req) => {
       if (!row || row.expires_at < Date.now()) return json({ ok: false, error: "expired" }, 410);
 
       // One-time login for the TV to become this user with, handed back only
-      // via poll() and gated there by tv_secret (see below).
-      const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
-        type: "magiclink",
-        email: user.email!,
-      });
-      if (linkErr) return json({ ok: false, error: "server_error" }, 500);
+      // via poll() and gated there by tv_secret (see below). Skipped for a
+      // trackers-only pairing (TV already signed in, just wants one more
+      // tracker) — no need to mint a login token nobody's going to consume.
+      const trackersOnly = body.trackersOnly === true;
+      let appSecret = "";
+      if (!trackersOnly) {
+        const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
+          type: "magiclink",
+          email: user.email!,
+        });
+        if (linkErr) return json({ ok: false, error: "server_error" }, 500);
+        appSecret = link?.properties?.hashed_token ?? "";
+      }
 
       // Hand back the hashed_token (not the 6-digit email_otp): the TV is signed
       // OUT and has no email, so it must verify via verifyOtp({ tokenHash }) which
@@ -47,7 +54,7 @@ Deno.serve(async (req) => {
       await admin.from("tv_pairings").update({
         status: "approved",
         app_user_id: user.id,
-        app_secret: link?.properties?.hashed_token ?? "",
+        app_secret: appSecret,
         tracker_blob: body.trackerBlob ?? null,
       }).eq("code", body.code);
       return json({ ok: true });
