@@ -44,6 +44,7 @@ import '../anilist/anilist_store.dart';
 import '../tracker/mal_service.dart';
 import '../tracker/simkl_service.dart';
 import '../tracker/tracker_hub.dart';
+import '../tracker/relay/tracker_relay.dart';
 import '../app_mode.dart';
 import '../appwrite/appwrite_service.dart';
 import '../backup/backup_service.dart';
@@ -273,6 +274,12 @@ Future<void> initDependencies() async {
   sl.registerSingleton<TrackerHub>(
     TrackerHub([sl<AniListService>(), sl<MalService>(), sl<SimklService>()]),
   );
+  // TV relay: packs/unpacks tracker sessions to move a login from phone to TV.
+  sl.registerLazySingleton<TrackerRelay>(() => TrackerRelay({
+        'anilist': sl<AniListService>(),
+        'mal': sl<MalService>(),
+        'simkl': sl<SimklService>(),
+      }));
 
   // Share deep links (zangetsu://open?…): opens a shared title's Detail, or
   // reports an uninstalled source. Eager so its AppLinks listener is live from
