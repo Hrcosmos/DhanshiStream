@@ -7,6 +7,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/di/injector.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
+import '../../core/tracker/relay/tracker_blob.dart';
+import '../../core/tracker/relay/tracker_relay.dart';
+import '../../core/tracker/relay/tracker_relay_crypto.dart';
 import '../../core/tv/tv_focusable.dart';
 import 'auth_cubit.dart';
 import 'tv_pairing_service.dart';
@@ -25,6 +28,7 @@ class _TvPairScreenState extends State<TvPairScreen> {
   final _svc = sl<TvPairingService>();
   String? _code;
   String? _tvSecret;
+  String? _nonce;
   Timer? _poll;
   DateTime? _expiresAt;
   _Phase _phase = _Phase.loading;
@@ -54,6 +58,7 @@ class _TvPairScreenState extends State<TvPairScreen> {
       setState(() {
         _code = r.code;
         _tvSecret = r.tvSecret;
+        _nonce = r.nonce;
         _expiresAt = DateTime.now().add(const Duration(minutes: 5));
         _phase = _Phase.ready;
       });
@@ -86,6 +91,7 @@ class _TvPairScreenState extends State<TvPairScreen> {
     if (!mounted) return;
     if (err == null) {
       await context.read<AuthCubit>().adoptCurrentSession();
+      await _applyRelayedTrackers(res.trackerBlob);
       if (mounted) Navigator.of(context).maybePop(true);
     } else {
       setState(() {
@@ -94,6 +100,32 @@ class _TvPairScreenState extends State<TvPairScreen> {
       });
     }
   }
+
+  Future<void> _applyRelayedTrackers(String? blob) async {
+    final nonce = _nonce;
+    if (blob == null || blob.isEmpty || nonce == null) return;
+    try {
+      final json = TrackerRelayCrypto.decrypt(blob, nonce);
+      final applied = await sl<TrackerRelay>().unpack(TrackerBlob.decode(json));
+      if (applied.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            content: Text('Trackers synced: ${applied.map(_label).join(', ')}'),
+          ));
+      }
+    } catch (_) {
+      // Decrypt/parse failed → app account is signed in regardless; the user
+      // can top up trackers from Settings › Connections.
+    }
+  }
+
+  String _label(String id) => switch (id) {
+        'anilist' => 'AniList',
+        'mal' => 'MyAnimeList',
+        'simkl' => 'Simkl',
+        _ => id,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +152,12 @@ class _TvPairScreenState extends State<TvPairScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: QrImageView(data: 'zangetsu://pair?code=$_code', size: 220, gapless: true),
+            child: QrImageView(
+              data: 'zangetsu://pair?code=$_code'
+                  '${_nonce != null ? '&nonce=$_nonce' : ''}',
+              size: 220,
+              gapless: true,
+            ),
           ),
           const SizedBox(width: 52),
           Column(
