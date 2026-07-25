@@ -411,6 +411,17 @@ class AniListService extends ChangeNotifier implements Tracker {
     await _store.setScrobbledProgress(media.id, 0);
   }
 
+  // ── Session export/import (TV relay) ────────────────────────────────────
+
+  @override
+  Map<String, dynamic>? exportSession() => _store.exportSession();
+
+  @override
+  Future<void> importSession(Map<String, dynamic> session) async {
+    await _store.importSession(session);
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _linkSub?.cancel();
