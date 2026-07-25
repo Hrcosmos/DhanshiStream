@@ -27,6 +27,7 @@ import '../sources/sources_screen.dart';
 import '../sources/tv_recommended_cs_repos.dart';
 import '../update/update_dialog.dart';
 import '../watch_together/ui/watch_party_lobby_screen.dart';
+import 'connections_screen_tv.dart';
 import 'developers_screen.dart';
 import 'discord_settings_screen.dart';
 import 'donate_screen.dart';
@@ -447,13 +448,11 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
                   ),
 
                   // ── Connections ─────────────────────────────────────────
-                  // Note: connectedCount is omitted on TV to avoid importing tracker
-                  // services. Static subtitle matches the phone's fallback state.
                   SettingsCard(
                     children: [
-                      TvFocusable(scale: 1.0, 
+                      TvFocusable(scale: 1.0,
                         onTap: () async {
-                          await _push(const ConnectionsScreen());
+                          await _push(const ConnectionsScreenTv());
                           if (mounted) setState(() {});
                         },
                         child: const SettingsTile(
