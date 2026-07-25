@@ -166,9 +166,18 @@ class _LoginScreenTvState extends State<LoginScreenTv> {
                 const SizedBox(height: 14),
                 // Sign in without typing: pair with the already-signed-in phone.
                 TvFocusable(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TvPairScreen()),
-                  ),
+                  onTap: () async {
+                    final paired = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute<bool>(
+                          builder: (_) => const TvPairScreen()),
+                    );
+                    // Paired via phone → the TV is signed in now; pop this login
+                    // screen too so we land straight back in the app instead of
+                    // lingering on the form.
+                    if (paired == true && context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text.rich(

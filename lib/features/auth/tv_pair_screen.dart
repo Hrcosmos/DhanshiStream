@@ -82,6 +82,13 @@ class _TvPairScreenState extends State<TvPairScreen> {
     } catch (_) {
       return;
     }
+    // Server says the code lapsed (e.g. a skewed device clock beat our own
+    // timer) → stop and show "timed out" with a fresh-code button.
+    if (res.expired) {
+      _poll?.cancel();
+      if (mounted) setState(() => _phase = _Phase.expired);
+      return;
+    }
     if (!res.approved || !mounted) return;
     // Approved → stop polling and complete sign-in. Surface any error HERE
     // instead of hanging forever on "Signing in…".

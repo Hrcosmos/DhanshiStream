@@ -10,10 +10,22 @@ import '../../core/tracker/relay/tracker_relay_crypto.dart';
 class PairPoll {
   const PairPoll.pending()
       : approved = false,
+        expired = false,
         appSecret = null,
         trackerBlob = null;
-  const PairPoll.approved(this.appSecret, this.trackerBlob) : approved = true;
+  const PairPoll.expired()
+      : approved = false,
+        expired = true,
+        appSecret = null,
+        trackerBlob = null;
+  const PairPoll.approved(this.appSecret, this.trackerBlob)
+      : approved = true,
+        expired = false;
   final bool approved;
+
+  /// The server considers the code lapsed (can fire before the TV's own timer
+  /// when the device clock is off). Flip the screen to "timed out".
+  final bool expired;
   final String? appSecret;
   final String? trackerBlob;
 }
@@ -55,7 +67,21 @@ class TvPairingService {
   /// Poll for approval. Pending until the phone approves; then the minted
   /// one-time `appSecret` (a token hash) + optional tracker blob.
   Future<PairPoll> poll(String code, String tvSecret) async {
-    final data = await _invoke({'action': 'poll', 'code': code, 'tvSecret': tvSecret});
+    final Map<String, dynamic> data;
+    try {
+      data = await _invoke({'action': 'poll', 'code': code, 'tvSecret': tvSecret});
+    } on FunctionException catch (e) {
+      // The Edge Function answers 410 once the code lapses — surface it so the
+      // screen flips to "expired" instead of polling a dead code forever. Other
+      // errors are transient (network / not-yet-approved) — keep polling.
+      final details = e.details;
+      if (e.status == 410 ||
+          (details is Map && details['error'] == 'expired')) {
+        return const PairPoll.expired();
+      }
+      rethrow;
+    }
+    if (data['error'] == 'expired') return const PairPoll.expired();
     if (data['ok'] != true || data['status'] != 'approved') {
       return const PairPoll.pending();
     }
