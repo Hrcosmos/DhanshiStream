@@ -481,6 +481,30 @@ class MalService extends ChangeNotifier implements Tracker {
     }
   }
 
+  // ── Session export/import (TV relay) ────────────────────────────────────
+
+  @override
+  Map<String, dynamic>? exportSession() {
+    if (!isConnected) return null;
+    return {
+      'accessToken': _box.get('accessToken'),
+      'refreshToken': _box.get('refreshToken'),
+      'expiresAt': _box.get('expiresAt'),
+      'viewerName': _box.get('viewerName'),
+      'viewerAvatar': _box.get('viewerAvatar'),
+    };
+  }
+
+  @override
+  Future<void> importSession(Map<String, dynamic> s) async {
+    await _box.put('accessToken', s['accessToken']);
+    await _box.put('refreshToken', s['refreshToken']);
+    await _box.put('expiresAt', s['expiresAt']);
+    await _box.put('viewerName', s['viewerName']);
+    await _box.put('viewerAvatar', s['viewerAvatar']);
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _linkSub?.cancel();

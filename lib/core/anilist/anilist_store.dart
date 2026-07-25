@@ -53,6 +53,28 @@ class AniListStore {
     }
   }
 
+  // ── Session export/import (TV relay) ────────────────────────────────────
+  Map<String, dynamic>? exportSession() {
+    final token = _box.get('accessToken') as String?;
+    final viewerId = _box.get('viewerId') as int?;
+    if (token == null || token.isEmpty || viewerId == null) return null;
+    return {
+      'accessToken': token,
+      'expiresAt': _box.get('expiresAt'),
+      'viewerId': viewerId,
+      'viewerName': _box.get('viewerName'),
+      'viewerAvatar': _box.get('viewerAvatar'),
+    };
+  }
+
+  Future<void> importSession(Map<String, dynamic> s) async {
+    await _box.put('accessToken', s['accessToken']);
+    await _box.put('expiresAt', s['expiresAt']);
+    await _box.put('viewerId', s['viewerId']);
+    await _box.put('viewerName', s['viewerName']);
+    await _box.put('viewerAvatar', s['viewerAvatar']);
+  }
+
   // ── Preferences ──────────────────────────────────────────────────────────
   bool get autoSync => (_box.get('autoSync') as bool?) ?? true;
   set autoSync(bool v) => _box.put('autoSync', v);

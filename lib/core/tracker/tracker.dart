@@ -83,4 +83,12 @@ abstract interface class Tracker implements Listenable {
   /// include movies/TV). Best-effort: returns `[]` when disconnected or on any
   /// error — never throws. Each item is a metadata stub + its library status.
   Future<List<TrackerListItem>> fetchList();
+
+  /// The full persisted session as a plain JSON-able map, or null if not
+  /// connected. Used by the TV relay to move a session between devices.
+  Map<String, dynamic>? exportSession();
+
+  /// Write a relayed [session] (shape produced by [exportSession]) into local
+  /// storage and refresh state (`notifyListeners`).
+  Future<void> importSession(Map<String, dynamic> session);
 }

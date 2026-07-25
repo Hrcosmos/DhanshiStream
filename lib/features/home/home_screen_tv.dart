@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../../core/aniyomi/aniyomi_image_provider.dart';
 import '../../core/di/injector.dart';
+import '../../core/metadata/title_logo_service.dart';
 import '../../core/models/episode.dart';
 import '../../core/models/home_section.dart';
 import '../../core/models/media_item.dart';
@@ -14,9 +19,8 @@ import '../../core/playback/title_prefs.dart';
 import '../../core/playback/watch_history.dart';
 import '../../core/repository/source_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
-import '../../core/ui/continue_card.dart';
-import '../../core/ui/featured_carousel.dart';
 import '../../core/ui/featured_hero.dart';
 import '../../core/ui/list_status_sheet.dart';
 import '../../core/ui/poster_card.dart';
@@ -248,7 +252,13 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
     VoidCallback onTap, {
     bool autofocus = false,
   }) {
-    return TvFocusable(autofocus: autofocus, onTap: onTap, child: child);
+    return TvFocusable(
+      autofocus: autofocus,
+      variant: TvFocusVariant.float,
+      scale: 1.06,
+      onTap: onTap,
+      child: child,
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -271,31 +281,26 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
       return CustomScrollView(
         slivers: [
           // ── Hero banner ──────────────────────────────────────────────────
-          // Uses the REAL phone FeaturedHero so the TV banner is visually
-          // identical to the phone.  The wrapButton hook injects TvFocusable
-          // around Play / My List / Info without touching the widget's own code.
+          // TV-only cinematic hero: full-bleed art with left-aligned title +
+          // meta + labelled buttons (Apple-TV style). Bespoke so it doesn't look
+          // like the phone's centred FeaturedHero card — that widget is left
+          // untouched for the phone.
           if (heroItem != null)
             SliverToBoxAdapter(
-              child: SizedBox(
-                height: kHeroHeight,
-                child: FeaturedHero(
-                  item: heroItem,
-                  inList: _inList(heroItem),
-                  onPlay: () => _play(heroItem),
-                  onInfo: () => _openDetail(heroItem),
-                  onToggleList: () => showListStatusSheet(
-                    context,
-                    item: heroItem,
-                    onChanged: () {
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  metaFuture: _heroMeta(heroItem),
-                  // Inject TvFocusable around each button so Play / My List /
-                  // Info are all reachable via D-pad.  Play gets autofocus so
-                  // it is selected when the screen first appears.
-                  wrapButton: _tvWrapButton,
+              child: _TvHero(
+                items: heroItems.take(6).toList(),
+                inListOf: _inList,
+                metaOf: _heroMeta,
+                onPlay: _play,
+                onInfo: _openDetail,
+                onToggleList: (item) => showListStatusSheet(
+                  context,
+                  item: item,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
                 ),
+                wrapButton: _tvWrapButton,
               ),
             ),
 
@@ -312,7 +317,7 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
           // ── Poster rails (one per section) ──────────────────────────────
           for (var i = 0; i < sections.length; i++)
             SliverToBoxAdapter(
-              child: _TvRail(
+              child: TvRail(
                 section: sections[i],
                 onTap: _openDetail,
                 onSeeAll: () => _openSeeAll(sections[i]),
@@ -348,8 +353,11 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
 // ── Poster Rail ───────────────────────────────────────────────────────────────
 
 /// One labelled horizontal row of D-pad-focusable poster cards for a [HomeSection].
-class _TvRail extends StatelessWidget {
-  const _TvRail({
+/// Public (not `_TvRail`) + [visibleForTesting] so tests can pump it directly.
+@visibleForTesting
+class TvRail extends StatelessWidget {
+  const TvRail({
+    super.key,
     required this.section,
     required this.onTap,
     this.onSeeAll,
@@ -361,14 +369,14 @@ class _TvRail extends StatelessWidget {
   final VoidCallback? onSeeAll;
   final bool firstAutofocus;
 
-  static const double _cardWidth = 140;
-  static const double _cardHeight = 210;
+  static const double _cardWidth = 150;
+  static const double _cardHeight = 225; // 2:3 poster
 
   @override
   Widget build(BuildContext context) {
     final items = section.items;
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: 26, bottom: 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -379,20 +387,20 @@ class _TvRail extends StatelessWidget {
               section.title,
               style: const TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          // Card row
+          const SizedBox(height: 14),
+          // Card row. Height = poster + title + a little headroom for the
+          // focused card's scale-up (the ListView is Clip.none so the growth and
+          // its shadow spill past this box rather than being cropped). Kept snug
+          // so rows don't float apart — the old +80 left a big dead band under
+          // each title.
           SizedBox(
-            // Extra vertical headroom so a focused card's 1.08 scale-up has room
-            // to grow instead of being clipped by the row: without it the taller
-            // focused card overflowed and the ListView cropped its title/poster
-            // (tester report). The card itself stays [_cardHeight] and is centred
-            // in the taller row, so unfocused cards look unchanged.
-            height: _cardHeight + 40,
+            height: _cardHeight + 44,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               // Don't clip the focused card's scale-up + accent glow. Combined
@@ -407,13 +415,15 @@ class _TvRail extends StatelessWidget {
                 if (index >= items.length) {
                   // Trailing "See all" card — opens the full paginated grid.
                   return Padding(
-                    padding: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.only(right: 16),
                     child: Center(
                       child: SizedBox(
                         width: _cardWidth,
                         height: _cardHeight,
                         child: TvFocusable(
                           onTap: onSeeAll!,
+                          variant: TvFocusVariant.float,
+                          scale: 1.10,
                           child: Container(
                             decoration: BoxDecoration(
                               color: AppColors.surface2,
@@ -446,34 +456,47 @@ class _TvRail extends StatelessWidget {
                   );
                 }
                 final item = items[index];
+                // Only the poster ART gets the float focus (white outline hugs
+                // the artwork); the title sits below, outside the outline.
                 return Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Center(
-                    child: SizedBox(
-                      width: _cardWidth,
-                      // Focus is a clean box around the poster art; the title is
-                      // overlaid on the poster's bottom and pops into a white
-                      // chip when focused (Netflix-style).
-                      child: TvFocusable(
-                        autofocus: firstAutofocus && index == 0,
-                        onTap: () => onTap(item),
-                        focusLabel: item.title,
-                        child: SizedBox(
-                          width: _cardWidth,
-                          height: _cardHeight,
-                          child: PosterCard(
-                            title: item.title,
-                            imageUrl: item.cover,
-                            headers: item.coverHeaders,
-                            cellWidth: _cardWidth,
-                            showTitle: false,
-                            // Touch gestures are disabled on TV; TvFocusable
-                            // handles OK-key selection.
-                            onTap: null,
-                            onLongPress: null,
+                  padding: const EdgeInsets.only(right: 16),
+                  child: SizedBox(
+                    width: _cardWidth,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TvFocusable(
+                          autofocus: firstAutofocus && index == 0,
+                          variant: TvFocusVariant.float,
+                          scale: 1.06,
+                          onTap: () => onTap(item),
+                          child: SizedBox(
+                            width: _cardWidth,
+                            height: _cardHeight,
+                            child: PosterCard(
+                              title: item.title,
+                              imageUrl: item.cover,
+                              headers: item.coverHeaders,
+                              cellWidth: _cardWidth,
+                              showTitle: false,
+                              onTap: null,
+                              onLongPress: null,
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -502,13 +525,15 @@ class _TvContinueRail extends StatelessWidget {
   final void Function(HistoryEntry) onResume;
   final bool firstAutofocus;
 
-  static const double _cardWidth = 140;
-  static const double _cardHeight = 236;
+  // Landscape (16:9) art reads better than the phone's portrait ContinueCard on
+  // a TV row — it's what Netflix/Disney+ TV apps do too.
+  static const double _cardWidth = 300;
+  static const double _cardHeight = 176; // 16:9 of 300
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: 24, bottom: 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -524,8 +549,10 @@ class _TvContinueRail extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          // Landscape art + two lines of text below; snug headroom for the
+          // focused card's scale-up (Clip.none lets it spill, so no crop).
           SizedBox(
-            height: _cardHeight + 40,
+            height: _cardHeight + 60,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -534,30 +561,14 @@ class _TvContinueRail extends StatelessWidget {
               itemBuilder: (context, index) {
                 final e = history[index];
                 return Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Center(
-                    child: SizedBox(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: SizedBox(
+                    width: _cardWidth,
+                    child: _TvContinueCard(
+                      entry: e,
                       width: _cardWidth,
-                      child: TvFocusable(
-                        autofocus: firstAutofocus && index == 0,
-                        onTap: () => onResume(e),
-                        child: SizedBox(
-                          width: _cardWidth,
-                          height: _cardHeight,
-                          child: ContinueCard(
-                            title: e.showTitle,
-                            imageUrl: e.cover,
-                            headers: e.coverHeaders,
-                            progress: e.progress,
-                            cellWidth: _cardWidth,
-                            subtitle: e.episodeNumber != null
-                                ? 'Episode ${e.episodeNumber!.toInt()}'
-                                : null,
-                            onTap: null,
-                            onLongPress: null,
-                          ),
-                        ),
-                      ),
+                      autofocus: firstAutofocus && index == 0,
+                      onResume: () => onResume(e),
                     ),
                   ),
                 );
@@ -568,4 +579,424 @@ class _TvContinueRail extends StatelessWidget {
       ),
     );
   }
+}
+
+/// TV-only LANDSCAPE Continue Watching card (16:9 art + progress overlay, with
+/// the title and "Continue · E{n}" below). Landscape reads better on TV than
+/// the shared portrait ContinueCard; that shared widget is left untouched for
+/// the phone.
+class _TvContinueCard extends StatelessWidget {
+  const _TvContinueCard({
+    required this.entry,
+    required this.width,
+    required this.onResume,
+    this.autofocus = false,
+  });
+  final HistoryEntry entry;
+  final double width;
+  final VoidCallback onResume;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = entry;
+    final sub = e.episodeNumber != null
+        ? 'Continue · E${e.episodeNumber!.toInt()}'
+        : 'Continue';
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Only the 16:9 ART gets the float focus (white outline hugs it).
+          TvFocusable(
+            autofocus: autofocus,
+            variant: TvFocusVariant.float,
+            scale: 1.05,
+            onTap: onResume,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if ((e.cover ?? '').isNotEmpty)
+                      CachedNetworkImage(
+                        imageUrl: e.cover!,
+                        httpHeaders: e.coverHeaders,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 600,
+                        placeholder: (_, _) =>
+                            ColoredBox(color: AppColors.surface2),
+                        errorWidget: (_, _, _) =>
+                            ColoredBox(color: AppColors.surface2),
+                      )
+                    else
+                      ColoredBox(color: AppColors.surface2),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        height: 5,
+                        color: Colors.black.withValues(alpha: 0.55),
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: e.progress.clamp(0.0, 1.0),
+                          child: Container(color: AppColors.accent),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            e.showTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── TV Hero ─────────────────────────────────────────────────────────────────
+
+/// Full-bleed cinematic hero for TV: the artwork fills the banner, a left-side
+/// scrim keeps the copy readable, and the title logo (or text), a meta line and
+/// the Play / My List / Info buttons sit bottom-left — Apple-TV style. The
+/// buttons pass through [wrapButton] so they become D-pad focusable.
+class _TvHero extends StatefulWidget {
+  const _TvHero({
+    required this.items,
+    required this.inListOf,
+    required this.metaOf,
+    required this.onPlay,
+    required this.onInfo,
+    required this.onToggleList,
+    required this.wrapButton,
+  });
+
+  /// Featured titles the hero rotates through (Apple-TV style).
+  final List<MediaItem> items;
+  final bool Function(MediaItem) inListOf;
+  final Future<HeroMeta?>? Function(MediaItem) metaOf;
+  final void Function(MediaItem) onPlay;
+  final void Function(MediaItem) onInfo;
+  final void Function(MediaItem) onToggleList;
+  final Widget Function(Widget child, VoidCallback onTap, {bool autofocus})
+      wrapButton;
+
+  @override
+  State<_TvHero> createState() => _TvHeroState();
+}
+
+class _TvHeroState extends State<_TvHero> {
+  int _i = 0;
+  String? _logoUrl; // TMDB title logo (null → show the text title)
+  Timer? _timer;
+
+  MediaItem get _item => widget.items[_i % widget.items.length];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLogo();
+    _startRotation();
+  }
+
+  @override
+  void didUpdateWidget(_TvHero old) {
+    super.didUpdateWidget(old);
+    if (old.items.length != widget.items.length) {
+      _i = widget.items.isEmpty ? 0 : _i % widget.items.length;
+      _startRotation();
+      _loadLogo();
+    }
+  }
+
+  /// Cycle the featured title every few seconds. The Focus nodes persist across
+  /// these rebuilds, so rotating never steals focus from the rows below.
+  void _startRotation() {
+    _timer?.cancel();
+    if (widget.items.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 9), (_) {
+        if (!mounted) return;
+        setState(() {
+          _i = (_i + 1) % widget.items.length;
+          _logoUrl = null;
+        });
+        _loadLogo();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadLogo() async {
+    if (!sl.isRegistered<TitleLogoService>()) return;
+    final idx = _i;
+    try {
+      final url = await sl<TitleLogoService>().logoFor(_item);
+      if (mounted && idx == _i && url != null && url.isNotEmpty) {
+        setState(() => _logoUrl = url);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = _item;
+    final inList = widget.inListOf(item);
+    final cover = item.cover;
+    final hasCover = cover != null && cover.isNotEmpty;
+    final mq = MediaQuery.of(context);
+    final memW = (mq.size.width * mq.devicePixelRatio).round();
+    final provider =
+        hasCover ? aniyomiCoverProvider(cover, item.coverHeaders) : null;
+
+    return SizedBox(
+      height: mq.size.height * 0.72,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: AppColors.bg),
+          if (provider != null)
+            Image(
+              image: ResizeImage(provider, width: memW),
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              gaplessPlayback: true,
+            )
+          else
+            ColoredBox(color: AppColors.surface2),
+          // Left scrim for copy legibility.
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [Color(0xE60B0B0F), Color(0x4D0B0B0F), Color(0x000B0B0F)],
+                    stops: [0.0, 0.44, 0.72],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Bottom fade into the page so the rails below sit seamlessly.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [AppColors.bg, const Color(0x000B0B0F)],
+                    stops: const [0.015, 0.5],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Copy + actions, bottom-left (aligned with the row titles below).
+          Positioned(
+            left: 48,
+            right: 48,
+            bottom: 52,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: mq.size.width * 0.5,
+                    maxHeight: 112,
+                  ),
+                  child: _logoUrl != null
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: CachedNetworkImage(
+                            imageUrl: _logoUrl!,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.centerLeft,
+                            memCacheWidth: memW,
+                            fadeInDuration: const Duration(milliseconds: 250),
+                            errorWidget: (_, _, _) => _titleText(),
+                          ),
+                        )
+                      : _titleText(),
+                ),
+                const SizedBox(height: 16),
+                _metaLine(item),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    widget.wrapButton(_playBtn(), () => widget.onPlay(item),
+                        autofocus: true),
+                    const SizedBox(width: 14),
+                    widget.wrapButton(
+                      _glassBtn(
+                        inList ? Icons.check_rounded : Icons.add_rounded,
+                        'My List',
+                        active: inList,
+                      ),
+                      () => widget.onToggleList(item),
+                    ),
+                    const SizedBox(width: 14),
+                    widget.wrapButton(
+                      _glassBtn(Icons.info_outline_rounded, 'Info'),
+                      () => widget.onInfo(item),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Page dots (Apple-TV) — one per featured title, current one widened.
+          if (widget.items.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 24,
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var d = 0; d < widget.items.length; d++)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: d == _i ? 20 : 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: d == _i
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _titleText() => Text(
+        _item.title,
+        style: AppText.largeTitle.copyWith(
+          fontSize: 52,
+          height: 1.0,
+          letterSpacing: -0.8,
+          fontWeight: FontWeight.w800,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+
+  Widget _metaLine(MediaItem item) {
+    return FutureBuilder<HeroMeta?>(
+      future: widget.metaOf(item),
+      builder: (context, snap) {
+        final m = snap.data;
+        if (m == null) return const SizedBox(height: 16);
+        final parts = <String>[...m.genres.take(3)];
+        if (m.episodeCount > 1) {
+          parts.add('${m.episodeCount} Episodes');
+        } else if ((m.year ?? '').isNotEmpty) {
+          parts.add(m.year!);
+        }
+        if (parts.isEmpty) return const SizedBox(height: 16);
+        return Text(
+          parts.join('   ·   ').toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppText.caption.copyWith(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.6,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _playBtn() => Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Play',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: AppColors.bg,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _glassBtn(IconData icon, String label, {bool active = false}) =>
+      Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: active ? AppColors.accent : Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      );
 }
