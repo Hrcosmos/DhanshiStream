@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/supabase/supabase_service.dart';
+import '../../core/tracker/relay/tracker_relay_crypto.dart';
 
 /// Result of a TV-side poll.
 class PairPoll {
@@ -36,9 +37,11 @@ class TvPairingService {
 
   /// Register a pending pairing. Returns the human code (also embedded in the
   /// QR) and the TV-only secret that gates collecting the login token in [poll].
-  Future<({String code, String tvSecret})> startPairing(String deviceName) async {
+  Future<({String code, String tvSecret, String nonce})> startPairing(
+      String deviceName) async {
     final code = _randomCode(8);
     final tvSecret = _randomToken(32);
+    final nonce = TrackerRelayCrypto.newNonce();
     await _c.from('tv_pairings').insert({
       'code': code,
       'tv_secret': tvSecret,
@@ -46,7 +49,7 @@ class TvPairingService {
       'device_name': deviceName,
       'expires_at': DateTime.now().millisecondsSinceEpoch + _pairTtlMs,
     });
-    return (code: code, tvSecret: tvSecret);
+    return (code: code, tvSecret: tvSecret, nonce: nonce);
   }
 
   /// Poll for approval. Pending until the phone approves; then the minted
@@ -89,8 +92,14 @@ class TvPairingService {
 
   /// Approve the pairing (signed-in phone). The Edge Function reads the phone's
   /// identity from the auth header the client attaches automatically.
-  Future<bool> approve(String code) async {
-    final data = await _invoke({'action': 'approve', 'code': _norm(code)});
+  Future<bool> approve(String code,
+      {String? trackerBlob, bool trackersOnly = false}) async {
+    final data = await _invoke({
+      'action': 'approve',
+      'code': _norm(code),
+      if (trackerBlob != null) 'trackerBlob': trackerBlob,
+      if (trackersOnly) 'trackersOnly': true,
+    });
     return data['ok'] == true;
   }
 
