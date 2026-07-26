@@ -7,7 +7,6 @@ import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
 import '../../core/download/download_manager.dart';
 import '../../core/download/download_prefs.dart';
-import '../../core/download/download_service.dart';
 import '../../core/download/download_record.dart';
 import '../../core/models/episode.dart';
 import '../../core/models/video_source.dart';
@@ -126,6 +125,11 @@ class _DownloadsScreenState extends State<DownloadsScreen>
   /// Applies to the NEXT downloads started (running HLS jobs aren't retimed).
   void _openDownloadSettings() {
     final prefs = sl<DownloadPrefs>();
+    // Hold the live drag value in local state so the sliders move smoothly —
+    // each tick isn't an async Hive write/read round-trip. Persist + apply on
+    // release (onCommit).
+    int parallel = prefs.parallelDownloads;
+    int connections = prefs.connectionsPerDownload;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -200,23 +204,28 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                 slider(
                   title: 'Parallel downloads',
                   subtitle: 'How many episodes download at the same time.',
-                  value: prefs.parallelDownloads,
+                  value: parallel,
                   min: DownloadPrefs.parallelMin,
                   max: DownloadPrefs.parallelMax,
-                  onChanged: (n) => prefs.setParallelDownloads(n),
-                  // Apply live: raising it starts queued episodes immediately.
-                  onCommit: (n) =>
-                      DownloadService.instance.invoke('setParallel', {'n': n}),
+                  onChanged: (n) => parallel = n,
+                  // On release: persist + apply live to both paths (MP4 queue +
+                  // HLS service). Raising it starts queued episodes immediately;
+                  // lowering it just stops new ones spawning.
+                  onCommit: (n) {
+                    prefs.setParallelDownloads(n);
+                    sl<DownloadManager>().setParallel(n);
+                  },
                 ),
                 const SizedBox(height: 8),
                 slider(
                   title: 'Connections per download',
                   subtitle: 'Segment connections a single download uses. '
                       'Higher = faster, more data at once.',
-                  value: prefs.connectionsPerDownload,
+                  value: connections,
                   min: DownloadPrefs.connectionsMin,
                   max: DownloadPrefs.connectionsMax,
-                  onChanged: (n) => prefs.setConnectionsPerDownload(n),
+                  onChanged: (n) => connections = n,
+                  onCommit: (n) => prefs.setConnectionsPerDownload(n),
                 ),
                 const SizedBox(height: 12),
               ],

@@ -51,6 +51,10 @@ class DownloadManager extends ChangeNotifier {
 
   Box<Map> get _box => Hive.box<Map>(boxName);
   final FileDownloader _dl = FileDownloader();
+  // Throttles direct-file (MP4) downloads to the "Parallel downloads" setting.
+  // background_downloader runs enqueued tasks concurrently, so without this the
+  // limit was silently HLS-only. The queue holds extras until a slot frees.
+  final MemoryTaskQueue _mp4Queue = MemoryTaskQueue();
   // Small HTTP client for fetching subtitle sidecar files (they're tiny, so a
   // direct GET in the UI isolate beats threading them through the downloaders).
   final Dio _dio = Dio(
@@ -82,9 +86,38 @@ class DownloadManager extends ChangeNotifier {
       progressBar: true,
     );
     _sub = _dl.updates.listen(_onUpdate);
+    // Route MP4 downloads through the concurrency-limited queue.
+    _mp4Queue.maxConcurrent = _downloadPrefs.parallelDownloads;
+    _dl.addTaskQueue(_mp4Queue);
+    // A task the queue couldn't enqueue at all (rare) → same fallback as a
+    // failed start: try the next mirror, else mark failed.
+    _mp4Queue.enqueueErrors.listen((task) async {
+      final rec = _records[task.taskId];
+      if (rec == null || rec.status == DownloadStatus.canceled) return;
+      if (await _tryNext(rec)) return;
+      _put(rec.copyWith(
+        status: DownloadStatus.failed,
+        error: () => "Couldn't start download",
+      ));
+      notifyListeners();
+    });
     _listenBackgroundService();
     _listenTorrentDownloads();
     _reconcileServiceResults(); // apply HLS downloads finished while killed
+  }
+
+  /// Apply a new "Parallel downloads" limit live to BOTH paths — the MP4 queue
+  /// here and the HLS service — so a change takes effect on the current batch.
+  /// Raising it starts queued episodes right away; lowering it only stops new
+  /// ones spawning (running downloads are never interrupted).
+  void setParallel(int n) {
+    final v = n.clamp(DownloadPrefs.parallelMin, DownloadPrefs.parallelMax);
+    _mp4Queue.maxConcurrent = v;
+    // The queue only re-checks on add/finish, not when maxConcurrent changes —
+    // so nudge it, otherwise raising the limit wouldn't start queued downloads
+    // until the current one ended.
+    _mp4Queue.advanceQueue();
+    DownloadService.instance.invoke('setParallel', {'n': v});
   }
 
   /// Apply progress/done/failed events the foreground-service isolate sends for
@@ -432,17 +465,12 @@ class DownloadManager extends ChangeNotifier {
             displayName: displayName,
           );
     _tasks[rec.id] = task;
-    final ok = await _dl.enqueue(task);
-    if (!ok) {
-      if (await _tryNext(rec)) return;
-      _put(
-        rec.copyWith(
-          status: DownloadStatus.failed,
-          error: () => "Couldn't start download",
-        ),
-      );
-      notifyListeners();
-    }
+    // Mark it waiting ("Queued"); the queue enqueues it when a parallel slot is
+    // free (→ enqueued/running in _onUpdate). Start failures come back via
+    // _mp4Queue.enqueueErrors + _onUpdate's failed case.
+    _put(rec.copyWith(status: DownloadStatus.queued, progress: 0));
+    notifyListeners();
+    _mp4Queue.add(task);
   }
 
   /// Hand an HLS source to the foreground-service isolate so it downloads in
@@ -600,8 +628,9 @@ class DownloadManager extends ChangeNotifier {
       _tasks.remove(rec.id);
       return;
     }
+    _mp4Queue.removeTasksWithIds([rec.id]); // drop it if still waiting in line
     try {
-      await _dl.cancelTaskWithId(rec.id); // direct-file task (if any)
+      await _dl.cancelTaskWithId(rec.id); // direct-file task (if enqueued/running)
     } catch (_) {}
     DownloadService.instance.invoke('cancel', {'id': rec.id}); // HLS job (if any)
     _tasks.remove(rec.id);
