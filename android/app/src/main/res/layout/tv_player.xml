@@ -275,6 +275,17 @@
                     android:drawableStart="@drawable/ic_tv_next"
                     android:text="Next Episode"
                     tools:ignore="HardcodedText" />
+
+                <!-- MegaSkip: manual jump-forward N seconds (Aniyomi-style).
+                     Text + visibility set in code from the megaSkip prefs. -->
+                <TextView
+                    android:id="@+id/btn_megaskip"
+                    style="@style/TvPillButtonSmall"
+                    android:layout_marginStart="10dp"
+                    android:drawableStart="@drawable/ic_tv_next"
+                    android:text="+85s"
+                    android:visibility="gone"
+                    tools:ignore="HardcodedText" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

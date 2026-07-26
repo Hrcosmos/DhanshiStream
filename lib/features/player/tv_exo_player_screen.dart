@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -7,7 +6,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/di/injector.dart';
@@ -20,6 +18,7 @@ import '../../core/playback/watch_history.dart';
 import '../../core/playback/skip_service.dart';
 import '../../core/playback/source_selection.dart';
 import '../../core/playback/subtitle_download_service.dart';
+import '../../core/playback/subtitle_font_stage.dart';
 import '../../core/playback/subtitle_language.dart';
 import '../../core/playback/subtitle_search_service.dart';
 import '../../core/playback/title_prefs.dart';
@@ -519,29 +518,19 @@ class _TvExoPlayerScreenState extends State<TvExoPlayerScreen> {
     _c?.applyCaptionStyle(style, fontPath: path);
   }
 
-  /// Copies the chosen bundled font to app-support once so Kotlin can
-  /// Typeface.createFromFile it. Returns null for the default family.
+  /// Stages the chosen bundled font once (shared with the native TV player) and
+  /// caches the path so repeated style changes don't re-copy. Null for default.
   Future<String?> _stageFont(String family) async {
     if (family.isEmpty) return null;
     if (family == _stagedFontFamily && _stagedFontPath != null) {
       return _stagedFontPath;
     }
-    final asset = subtitleFontAsset(family);
-    if (asset == null) return null;
-    try {
-      final dir = await getApplicationSupportDirectory();
-      final out = File('${dir.path}/sub_fonts/${asset.split('/').last}');
-      if (!await out.exists()) {
-        await out.parent.create(recursive: true);
-        final bytes = await rootBundle.load(asset);
-        await out.writeAsBytes(bytes.buffer.asUint8List());
-      }
+    final path = await stageSubtitleFont(family);
+    if (path != null) {
       _stagedFontFamily = family;
-      _stagedFontPath = out.path;
-      return out.path;
-    } catch (_) {
-      return null;
+      _stagedFontPath = path;
     }
+    return path;
   }
 
   void _selectQuality(HlsVariant? v) {

@@ -1222,6 +1222,29 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  // TV picker options for MegaSkip duration (the phone uses the inline slider).
+  static const List<(int, String)> _megaSkipDurationOptions = [
+    (10, '10s'),
+    (15, '15s'),
+    (30, '30s'),
+    (60, '60s'),
+    (85, '85s'),
+    (90, '90s'),
+    (120, '120s'),
+    (180, '180s'),
+  ];
+
+  Future<void> _pickMegaSkipDuration() async {
+    final picked = await _pick<int>(
+      title: 'MegaSkip duration',
+      options: _megaSkipDurationOptions,
+      current: _prefs.megaSkipSeconds,
+    );
+    if (picked == null) return;
+    await _prefs.setMegaSkipSeconds(picked);
+    if (mounted) setState(() {});
+  }
+
   /// Default player picker: Built-in + any installed external players. Streams
   /// then open in the chosen app instead of the in-app player.
   Future<void> _pickPlayer() async {
@@ -1399,40 +1422,46 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
                 ),
                 onTap: _pickSpeed,
               ),
-              SettingsTile(
-                icon: Icons.memory_outlined,
-                title: 'Video decoder',
-                subtitle: _labelFor(
-                  _decoderOptions,
-                  _prefs.videoDecoder,
-                  'Hardware+ (recommended)',
+              // Video decoder + Anime4K are mpv-renderer-only — the native TV
+              // player (ExoPlayer) ignores them, so hide them on TV.
+              if (!sl<AppMode>().isTv)
+                SettingsTile(
+                  icon: Icons.memory_outlined,
+                  title: 'Video decoder',
+                  subtitle: _labelFor(
+                    _decoderOptions,
+                    _prefs.videoDecoder,
+                    'Hardware+ (recommended)',
+                  ),
+                  onTap: _pickDecoder,
                 ),
-                onTap: _pickDecoder,
-              ),
               // Anime4K GLSL upscaling — downloaded on demand. One row = Off /
               // Mid / High (GPU tier). Anime-tuned; may over-sharpen live action.
-              SettingsTile(
-                icon: Icons.auto_awesome_outlined,
-                title: 'Anime4K Enhancement',
-                subtitle: _shaderDownloading
-                    ? 'Downloading… ${(_shaderProgress * 100).round()}%'
-                    : (!_shadersReady
-                          ? 'Tap to download shaders (~0.8 MB)'
-                          : ShaderPresets.styleById(
-                              _prefs.videoShaderStyle,
-                            ).label),
-                trailing: _shaderDownloading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onTap: _shaderDownloading
-                    ? null
-                    : (!_shadersReady ? _downloadShaders : _pickShaderStyle),
-              ),
-              if (_shadersReady && _prefs.videoShaderStyle != 'off')
+              if (!sl<AppMode>().isTv)
+                SettingsTile(
+                  icon: Icons.auto_awesome_outlined,
+                  title: 'Anime4K Enhancement',
+                  subtitle: _shaderDownloading
+                      ? 'Downloading… ${(_shaderProgress * 100).round()}%'
+                      : (!_shadersReady
+                            ? 'Tap to download shaders (~0.8 MB)'
+                            : ShaderPresets.styleById(
+                                _prefs.videoShaderStyle,
+                              ).label),
+                  trailing: _shaderDownloading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  onTap: _shaderDownloading
+                      ? null
+                      : (!_shadersReady ? _downloadShaders : _pickShaderStyle),
+                ),
+              if (!sl<AppMode>().isTv &&
+                  _shadersReady &&
+                  _prefs.videoShaderStyle != 'off')
                 SettingsTile(
                   icon: Icons.speed_outlined,
                   title: 'Anime4K GPU tier',
@@ -1443,7 +1472,9 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
           ),
 
           // ── Player (external app handoff — Android) ─────────────────────
-          if (Platform.isAndroid) ...[
+          // External-player handoff is phone-only; the TV plays in its own
+          // native player, so hide this whole section on TV.
+          if (Platform.isAndroid && !sl<AppMode>().isTv) ...[
             const SettingsSectionLabel('Player'),
             SettingsCard(
               children: [
@@ -1524,7 +1555,17 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
                   if (mounted) setState(() {});
                 },
               ),
-              if (_prefs.megaSkip) _megaSkipDurationRow(),
+              // On TV the inline slider traps D-pad focus (↑/↓ change the value
+              // instead of moving on), so use a picker row there instead.
+              if (_prefs.megaSkip)
+                sl<AppMode>().isTv
+                    ? SettingsTile(
+                        icon: Icons.timer_outlined,
+                        title: 'MegaSkip duration',
+                        subtitle: '${_prefs.megaSkipSeconds}s',
+                        onTap: _pickMegaSkipDuration,
+                      )
+                    : _megaSkipDurationRow(),
               _toggleRow(
                 icon: Icons.screen_lock_portrait_outlined,
                 title: 'Keep screen on',
@@ -1568,7 +1609,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
                   if (mounted) setState(() {});
                 },
               ),
-              if (Platform.isAndroid)
+              if (Platform.isAndroid && !sl<AppMode>().isTv)
                 _toggleRow(
                   icon: Icons.picture_in_picture_alt_outlined,
                   title: 'Auto picture-in-picture',
@@ -1600,7 +1641,8 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
             ],
           ),
 
-          // ── Gestures ────────────────────────────────────────────────────
+          // ── Gestures (touch-only — hidden on TV) ────────────────────────
+          if (!sl<AppMode>().isTv) ...[
           const SettingsSectionLabel('Gestures'),
           SettingsCard(
             children: [
@@ -1636,6 +1678,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
               ),
             ],
           ),
+          ],
 
           // ── Cache (buffering + clear) ───────────────────────────────────
           const SettingsSectionLabel('Cache'),
@@ -1674,17 +1717,20 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
           const SettingsSectionLabel('Subtitles'),
           SettingsCard(
             children: [
-              _toggleRow(
-                icon: Icons.subtitles_outlined,
-                title: 'Styled subtitles (libass)',
-                subtitle: 'Real .ass styling — fonts, positions, karaoke, '
-                    'signs. Best for anime. Applies from the next episode.',
-                value: _prefs.styledSubtitles,
-                onChanged: (v) async {
-                  await _prefs.setStyledSubtitles(v);
-                  if (mounted) setState(() {});
-                },
-              ),
+              // libass is the mpv renderer's .ass styling — the native TV
+              // player styles subtitles via ExoPlayer instead, so hide on TV.
+              if (!sl<AppMode>().isTv)
+                _toggleRow(
+                  icon: Icons.subtitles_outlined,
+                  title: 'Styled subtitles (libass)',
+                  subtitle: 'Real .ass styling — fonts, positions, karaoke, '
+                      'signs. Best for anime. Applies from the next episode.',
+                  value: _prefs.styledSubtitles,
+                  onChanged: (v) async {
+                    await _prefs.setStyledSubtitles(v);
+                    if (mounted) setState(() {});
+                  },
+                ),
               SettingsTile(
                 icon: Icons.text_fields_rounded,
                 title: 'Subtitle style',

@@ -42,6 +42,7 @@ import '../../core/cast/cast_proxy.dart';
 import '../watch_together/watch_together_controller.dart';
 import '../watch_together/ui/room_panel.dart';
 import '../../core/app_mode.dart';
+import '../../core/tv/tv_focusable.dart';
 import 'player_controller.dart';
 import 'player_tv_controls.dart';
 import 'seek_preview.dart';
@@ -5422,42 +5423,45 @@ class _ColorSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: active ? AppColors.accent : AppColors.hairline,
-                width: active ? 3 : 1,
-              ),
-            ),
-            child: active
-                ? Icon(
-                    Icons.check_rounded,
-                    size: 18,
-                    color: color.computeLuminance() > 0.5
-                        ? Colors.black
-                        : Colors.white,
-                  )
-                : null,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: AppText.caption.copyWith(
-              color: active ? AppColors.accent : AppColors.textSecondary,
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: active ? AppColors.accent : AppColors.hairline,
+              width: active ? 3 : 1,
             ),
           ),
-        ],
-      ),
+          child: active
+              ? Icon(
+                  Icons.check_rounded,
+                  size: 18,
+                  color: color.computeLuminance() > 0.5
+                      ? Colors.black
+                      : Colors.white,
+                )
+              : null,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: AppText.caption.copyWith(
+            color: active ? AppColors.accent : AppColors.textSecondary,
+          ),
+        ),
+      ],
     );
+    // TV: GestureDetector isn't D-pad focusable, so colours can't be selected.
+    // Wrap in TvFocusable (OK selects, shows a focus ring). Mobile keeps the tap.
+    if (sl<AppMode>().isTv) {
+      return TvFocusable(onTap: onTap, child: content);
+    }
+    return GestureDetector(onTap: onTap, child: content);
   }
 }
 
@@ -5480,6 +5484,16 @@ class _SliderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // On TV a focused Slider swallows D-pad ↑/↓ (you can't move off it). Swap in
+    // a focusable ◄ value ► stepper: ◄/► adjust, ↑/↓ move to the next control.
+    if (sl<AppMode>().isTv) {
+      final step = (max - min) / divisions;
+      return _TvStepperRow(
+        label: label,
+        onDec: value <= min ? null : () => onChanged((value - step).clamp(min, max)),
+        onInc: value >= max ? null : () => onChanged((value + step).clamp(min, max)),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       child: Row(
@@ -5512,6 +5526,80 @@ class _SliderRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// TV replacement for [_SliderRow]'s slider: one full-width focusable row so
+/// D-pad ▲/▼ reliably land on it (edge buttons get skipped by directional
+/// focus, and a Slider would trap ▲/▼). When focused (accent ring), ◀ decreases
+/// and ▶ increases; ▲/▼/OK pass through to move to the next control.
+class _TvStepperRow extends StatefulWidget {
+  const _TvStepperRow({required this.label, this.onDec, this.onInc});
+  final String label;
+  final VoidCallback? onDec;
+  final VoidCallback? onInc;
+  @override
+  State<_TvStepperRow> createState() => _TvStepperRowState();
+}
+
+class _TvStepperRowState extends State<_TvStepperRow> {
+  bool _focused = false;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (e.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      widget.onDec?.call();
+      return KeyEventResult.handled;
+    }
+    if (e.logicalKey == LogicalKeyboardKey.arrowRight) {
+      widget.onInc?.call();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored; // ▲/▼/OK propagate → focus traversal
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onKeyEvent: _onKey,
+      onFocusChange: (f) => setState(() => _focused = f),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: _focused
+              ? AppColors.accent.withValues(alpha: 0.16)
+              : Colors.transparent,
+          border: Border.all(
+            color: _focused ? AppColors.accent : AppColors.surface2,
+            width: _focused ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.chevron_left,
+                color: widget.onDec == null
+                    ? AppColors.textTertiary
+                    : AppColors.accent),
+            Expanded(
+              child: Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                style: AppText.body.copyWith(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                color: widget.onInc == null
+                    ? AppColors.textTertiary
+                    : AppColors.accent),
+          ],
+        ),
       ),
     );
   }

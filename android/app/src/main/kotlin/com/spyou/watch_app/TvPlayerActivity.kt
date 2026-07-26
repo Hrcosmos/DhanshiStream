@@ -72,13 +72,20 @@ class TvPlayerActivity : Activity() {
         const val EXTRA_SPEED = "defaultSpeed"
         const val EXTRA_VOLUME = "volumeBoost"
         const val EXTRA_SUB_SCALE = "subtitleScale"
-        const val EXTRA_SUB_COLOR = "subtitleColor"
-        const val EXTRA_SUB_BG = "subtitleBgOpacity"
+        const val EXTRA_SUB_FG = "subtitleFgColor"
+        const val EXTRA_SUB_BG_COLOR = "subtitleBgColor"
+        const val EXTRA_SUB_EDGE = "subtitleEdge"
+        const val EXTRA_SUB_POS = "subtitlePosition"
+        const val EXTRA_SUB_FONT = "subtitleFontPath"
+        const val EXTRA_SUB_HAS_KEY = "subtitleApiKeySet"
         const val EXTRA_EP_LABELS = "episodeLabels"
         const val EXTRA_EP_COUNT = "episodeCount"
         const val EXTRA_START_INDEX = "startIndex"
         const val EXTRA_CATEGORY = "category"
         const val EXTRA_AVAIL_CATS = "availableCategories"
+        const val EXTRA_MEGASKIP = "megaSkip"
+        const val EXTRA_MEGASKIP_SECS = "megaSkipSeconds"
+        const val EXTRA_SKIP_INTRO = "skipIntro"
         // Result extras read back in MainActivity.onActivityResult.
         const val RESULT_POSITION = "positionMs"
         const val RESULT_DURATION = "durationMs"
@@ -102,6 +109,15 @@ class TvPlayerActivity : Activity() {
     private var availableCategories: List<String> = emptyList()
     private var episodeSources: List<Map<String, Any?>> = emptyList() // mirrors for the Server picker
     private var currentUrl: String? = null
+    // Cached loadStream args so an online-searched subtitle can be added by
+    // reloading the SAME stream at the current position (reuses loadStream, the
+    // proven episode-switch path). Only the new search feature reads these.
+    private var currentHeaders: Map<String, String>? = null
+    private var currentMime: String? = null
+    private var currentDrmKid: String? = null
+    private var currentDrmKey: String? = null
+    private val currentSubs = mutableListOf<MediaItem.SubtitleConfiguration>()
+    private var subtitleApiKeySet = false
     private var switching = false // guards against overlapping episode switches
 
     private data class Skip(val start: Long, val end: Long, val type: String)
@@ -126,6 +142,13 @@ class TvPlayerActivity : Activity() {
     private lateinit var btnSources: TextView
     private lateinit var btnAudioSubs: TextView
     private lateinit var btnNext: TextView
+    private lateinit var btnMegaskip: TextView
+    // MegaSkip jump size in seconds (read from the launch extras).
+    private var megaSkipSecs = 85
+    // Whether the AniSkip "Skip intro/ending" pill may show (Settings toggle).
+    private var skipIntroEnabled = true
+    // Live subtitle size multiplier (seeded from prefs; changeable in-player).
+    private var subScale = 1f
 
     private lateinit var menuPanel: View
     private lateinit var menuContent: android.widget.LinearLayout
@@ -181,6 +204,9 @@ class TvPlayerActivity : Activity() {
         episodeLabels = intent.getStringArrayExtra(EXTRA_EP_LABELS) ?: emptyArray()
         category = intent.getStringExtra(EXTRA_CATEGORY) ?: "sub"
         availableCategories = intent.getStringArrayExtra(EXTRA_AVAIL_CATS)?.toList() ?: emptyList()
+        skipIntroEnabled = intent.getBooleanExtra(EXTRA_SKIP_INTRO, true)
+        subScale = intent.getFloatExtra(EXTRA_SUB_SCALE, 1f)
+        subtitleApiKeySet = intent.getBooleanExtra(EXTRA_SUB_HAS_KEY, false)
 
         setContentView(R.layout.tv_player)
         bindViews()
@@ -274,6 +300,12 @@ class TvPlayerActivity : Activity() {
     ) {
         val p = player ?: return
         currentUrl = url
+        currentHeaders = headers
+        currentMime = mime
+        currentDrmKid = drmKid
+        currentDrmKey = drmKey
+        currentSubs.clear()
+        if (subs != null) currentSubs.addAll(subs)
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
         if (!headers.isNullOrEmpty()) httpFactory.setDefaultRequestProperties(headers)
@@ -434,6 +466,11 @@ class TvPlayerActivity : Activity() {
     /** Show/hide the Skip pill based on the current position (called each tick). */
     private fun updateSkip() {
         val p = player ?: return
+        // Respect the Settings "Skip intro button" toggle.
+        if (!skipIntroEnabled) {
+            if (skipButton.visibility == View.VISIBLE) hideSkip()
+            return
+        }
         if (menuOpen || switching) {
             if (skipButton.visibility == View.VISIBLE) skipButton.visibility = View.GONE
             return
@@ -514,6 +551,9 @@ class TvPlayerActivity : Activity() {
         switching = true
         loading.visibility = View.VISIBLE
         category = cat
+        // Remember this sub/dub choice for the title so the next launch opens in
+        // the same version (persisted Dart-side in TitlePrefsStore).
+        bridge.invokeMethod("setCategory", mapOf("category" to cat))
         bridge.invokeMethod(
             "resolveEpisode",
             mapOf("index" to currentIndex, "category" to cat),
@@ -706,6 +746,33 @@ class TvPlayerActivity : Activity() {
             }
         }
 
+        // Online subtitle search (OpenSubtitles) — needs an API key. Shown even
+        // when the video has no subs, so you can add one.
+        if (subtitleApiKeySet) {
+            if (textTracks.isEmpty()) sectionHeader("Subtitles")
+            option("Search online…", selected = false) { searchSubtitlesOnline() }
+        }
+
+        // Subtitle size — live change + persisted (only when there are subs).
+        // Labels avoid "Normal" so they don't collide with the Speed section's
+        // "Normal" (option() restores focus by label). The checkmark snaps to the
+        // nearest bucket so an in-between persisted size still shows one.
+        if (textTracks.isNotEmpty()) {
+            sectionHeader("Subtitle size")
+            val sizes = listOf("Small" to 0.8f, "Medium" to 1.0f, "Large" to 1.3f)
+            val nearest = sizes.minByOrNull { kotlin.math.abs(it.second - subScale) }?.second
+            for ((sLabel, s) in sizes) {
+                option(sLabel, selected = s == nearest) {
+                    subScale = s
+                    playerView.subtitleView
+                        ?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * s)
+                    MainActivity.tvBridge?.invokeMethod(
+                        "setSubtitleScale", mapOf("scale" to s.toDouble()),
+                    )
+                }
+            }
+        }
+
         // Playback speed.
         sectionHeader("Speed")
         for (s in listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)) {
@@ -747,6 +814,92 @@ class TvPlayerActivity : Activity() {
             .build()
     }
 
+    // ── Online subtitle search (OpenSubtitles, via the native→Dart bridge) ────
+    private fun searchSubtitlesOnline() {
+        val bridge = MainActivity.tvBridge ?: return
+        toast("Searching subtitles…")
+        bridge.invokeMethod(
+            "searchSubtitles",
+            emptyMap<String, Any?>(),
+            object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    @Suppress("UNCHECKED_CAST")
+                    val list = result as? List<Map<String, Any?>> ?: emptyList()
+                    runOnUiThread { showSubtitleResults(list) }
+                }
+                override fun error(code: String, msg: String?, details: Any?) {
+                    runOnUiThread { toast(msg ?: "Subtitle search failed") }
+                }
+                override fun notImplemented() {}
+            },
+        )
+    }
+
+    private fun showSubtitleResults(results: List<Map<String, Any?>>) {
+        if (results.isEmpty()) { toast("No subtitles found"); return }
+        showMenu(btnAudioSubs) {
+            sectionHeader("Search results")
+            results.forEachIndexed { i, r ->
+                val name = r["name"] as? String ?: "Subtitle ${i + 1}"
+                val lang = r["language"] as? String
+                val label = if (lang.isNullOrBlank()) name else "$name  ·  ${langName(lang) ?: lang}"
+                option(label, selected = false) { downloadSubtitle(i) }
+            }
+        }
+    }
+
+    private fun downloadSubtitle(index: Int) {
+        val bridge = MainActivity.tvBridge ?: return
+        toast("Downloading subtitle…")
+        bridge.invokeMethod(
+            "downloadSubtitle",
+            mapOf("index" to index),
+            object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    @Suppress("UNCHECKED_CAST")
+                    val m = result as? Map<String, Any?>
+                    val path = m?.get("path") as? String
+                    if (path == null) { runOnUiThread { toast("Couldn't download subtitle") }; return }
+                    runOnUiThread {
+                        addDownloadedSubtitle(
+                            path,
+                            m["language"] as? String,
+                            m["name"] as? String,
+                            m["format"] as? String,
+                        )
+                    }
+                }
+                override fun error(code: String, msg: String?, details: Any?) {
+                    runOnUiThread { toast(msg ?: "Couldn't download subtitle") }
+                }
+                override fun notImplemented() {}
+            },
+        )
+    }
+
+    /** Add a downloaded subtitle to the current stream and reload it in place
+     *  (same position). SELECTION_FLAG_DEFAULT makes ExoPlayer show it at once. */
+    private fun addDownloadedSubtitle(path: String, lang: String?, label: String?, format: String?) {
+        val uri = android.net.Uri.fromFile(java.io.File(path))
+        val isSrt = (format ?: "").contains("srt", true) || path.lowercase().endsWith(".srt")
+        val cfg = MediaItem.SubtitleConfiguration.Builder(uri)
+            .setMimeType(if (isSrt) MimeTypes.APPLICATION_SUBRIP else MimeTypes.TEXT_VTT)
+            .setLanguage(lang)
+            .setLabel(label ?: "OpenSubtitles")
+            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+            .build()
+        currentSubs.add(cfg)
+        val url = currentUrl ?: return
+        val pos = player?.currentPosition ?: 0L
+        loadStream(url, currentHeaders, currentSubs.toList(), currentMime, pos,
+            currentDrmKid, currentDrmKey)
+        toast("Subtitle added")
+    }
+
+    private fun toast(msg: String) {
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private fun applyVolume(percent: Int) {
         volumePercent = percent.coerceIn(100, 200)
         val gainMb = (((volumePercent - 100) / 100f) * 600f).toInt()
@@ -760,25 +913,31 @@ class TvPlayerActivity : Activity() {
     /** Style side-loaded + embedded subtitles from the saved prefs: scale, colour,
      *  optional background, black outline (readable on TV over any scene). */
     private fun applySubtitleStyle() {
-        val scale = intent.getFloatExtra(EXTRA_SUB_SCALE, 1f)
-        val fg = try {
-            android.graphics.Color.parseColor(intent.getStringExtra(EXTRA_SUB_COLOR) ?: "#FFFFFFFF")
-        } catch (_: Exception) { android.graphics.Color.WHITE }
-        val bgAlpha = (intent.getFloatExtra(EXTRA_SUB_BG, 0f) * 255).toInt().coerceIn(0, 255)
+        // Values are pre-computed by captionStyleFromPrefs (Dart), identical to
+        // the Flutter PlatformView player — colour, box, outline, position, font.
+        // subScale is a field so an in-player size change survives re-styling.
+        val fg = intent.getIntExtra(EXTRA_SUB_FG, android.graphics.Color.WHITE)
+        val bg = intent.getIntExtra(EXTRA_SUB_BG_COLOR, android.graphics.Color.TRANSPARENT)
+        val edge = intent.getBooleanExtra(EXTRA_SUB_EDGE, true)
+        val pos = intent.getFloatExtra(EXTRA_SUB_POS, 0.05f)
+        val tf = intent.getStringExtra(EXTRA_SUB_FONT)
+            ?.let { runCatching { android.graphics.Typeface.createFromFile(it) }.getOrNull() }
         playerView.subtitleView?.apply {
             setApplyEmbeddedStyles(false)
             setApplyEmbeddedFontSizes(false)
             setStyle(
                 CaptionStyleCompat(
                     fg,
-                    android.graphics.Color.argb(bgAlpha, 0, 0, 0),
+                    bg,
                     android.graphics.Color.TRANSPARENT,
-                    CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                    if (edge) CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                    else CaptionStyleCompat.EDGE_TYPE_NONE,
                     android.graphics.Color.BLACK,
-                    null,
+                    tf,
                 ),
             )
-            setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * scale)
+            setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subScale)
+            setBottomPaddingFraction(pos)
         }
     }
 
@@ -858,6 +1017,12 @@ class TvPlayerActivity : Activity() {
         btnSources = findViewById(R.id.btn_sources)
         btnAudioSubs = findViewById(R.id.btn_audio_subs)
         btnNext = findViewById(R.id.btn_next)
+        btnMegaskip = findViewById(R.id.btn_megaskip)
+        // MegaSkip pill: label + visibility from the megaSkip prefs (launch extras).
+        megaSkipSecs = intent.getIntExtra(EXTRA_MEGASKIP_SECS, 85)
+        btnMegaskip.text = "+${megaSkipSecs}s"
+        btnMegaskip.visibility =
+            if (intent.getBooleanExtra(EXTRA_MEGASKIP, true)) View.VISIBLE else View.GONE
 
         findViewById<TextView>(R.id.title).text = intent.getStringExtra(EXTRA_TITLE) ?: ""
         // episode_label is set by updateEpisodeUi (drives off episodeLabels).
@@ -873,7 +1038,7 @@ class TvPlayerActivity : Activity() {
         // never steal focus from the button row.
         timeBar.isFocusable = false
 
-        for (b in listOf(btnEpisodes, btnQuality, btnSources, btnAudioSubs, btnNext)) {
+        for (b in listOf(btnEpisodes, btnQuality, btnSources, btnAudioSubs, btnNext, btnMegaskip)) {
             b.isClickable = true
             // Focusable even in touch mode so requestFocus() works on emulators
             // (real TVs are always in D-pad/non-touch mode anyway).
@@ -891,6 +1056,7 @@ class TvPlayerActivity : Activity() {
         btnSources.setOnClickListener { openSourcesMenu() }
         btnAudioSubs.setOnClickListener { openAvMenu() }
         btnNext.setOnClickListener { loadEpisode(currentIndex + 1) }
+        btnMegaskip.setOnClickListener { seekBy(megaSkipSecs * 1000L) }
 
         skipButton.isFocusableInTouchMode = true
         applyPillFocus(skipButton, false)
