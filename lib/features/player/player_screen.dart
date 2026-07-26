@@ -5531,8 +5531,10 @@ class _SliderRow extends StatelessWidget {
   }
 }
 
-/// TV replacement for [_SliderRow]'s slider: a focusable row where ◄/► adjust
-/// the value and ▲/▼ pass through to move focus (a Slider would trap them).
+/// TV replacement for [_SliderRow]'s slider: one full-width focusable row so
+/// D-pad ▲/▼ reliably land on it (edge buttons get skipped by directional
+/// focus, and a Slider would trap ▲/▼). When focused (accent ring), ◀ decreases
+/// and ▶ increases; ▲/▼/OK pass through to move to the next control.
 class _TvStepperRow extends StatefulWidget {
   const _TvStepperRow({required this.label, this.onDec, this.onInc});
   final String label;
@@ -5565,11 +5567,11 @@ class _TvStepperRowState extends State<_TvStepperRow> {
       onFocusChange: (f) => setState(() => _focused = f),
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: _focused
-              ? AppColors.accent.withValues(alpha: 0.14)
+              ? AppColors.accent.withValues(alpha: 0.16)
               : Colors.transparent,
           border: Border.all(
             color: _focused ? AppColors.accent : AppColors.surface2,
