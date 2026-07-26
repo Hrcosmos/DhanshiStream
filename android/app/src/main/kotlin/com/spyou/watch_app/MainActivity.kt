@@ -978,8 +978,17 @@ class MainActivity : FlutterActivity() {
             intent.putExtra(TvPlayerActivity.EXTRA_SPEED, (call.argument<Number>("defaultSpeed") ?: 1.0).toFloat())
             intent.putExtra(TvPlayerActivity.EXTRA_VOLUME, (call.argument<Number>("volumeBoost") ?: 100).toInt())
             intent.putExtra(TvPlayerActivity.EXTRA_SUB_SCALE, (call.argument<Number>("subtitleScale") ?: 1.0).toFloat())
-            call.argument<String>("subtitleColor")?.let { intent.putExtra(TvPlayerActivity.EXTRA_SUB_COLOR, it) }
-            intent.putExtra(TvPlayerActivity.EXTRA_SUB_BG, (call.argument<Number>("subtitleBgOpacity") ?: 0.0).toFloat())
+            // Subtitle style is pre-computed Dart-side (captionStyleFromPrefs) so
+            // both TV players render identically — pass the finished values.
+            intent.putExtra(TvPlayerActivity.EXTRA_SUB_FG, (call.argument<Number>("subtitleFgColor") ?: -1).toInt())
+            intent.putExtra(TvPlayerActivity.EXTRA_SUB_BG_COLOR, (call.argument<Number>("subtitleBgColor") ?: 0).toInt())
+            intent.putExtra(TvPlayerActivity.EXTRA_SUB_EDGE, call.argument<Boolean>("subtitleEdge") ?: true)
+            intent.putExtra(TvPlayerActivity.EXTRA_SUB_POS, (call.argument<Number>("subtitlePosition") ?: 0.05).toFloat())
+            call.argument<String>("subtitleFontPath")?.let { intent.putExtra(TvPlayerActivity.EXTRA_SUB_FONT, it) }
+            intent.putExtra(TvPlayerActivity.EXTRA_SUB_HAS_KEY, call.argument<Boolean>("subtitleApiKeySet") ?: false)
+            intent.putExtra(TvPlayerActivity.EXTRA_MEGASKIP, call.argument<Boolean>("megaSkip") ?: true)
+            intent.putExtra(TvPlayerActivity.EXTRA_MEGASKIP_SECS, (call.argument<Number>("megaSkipSeconds") ?: 85).toInt())
+            intent.putExtra(TvPlayerActivity.EXTRA_SKIP_INTRO, call.argument<Boolean>("skipIntro") ?: true)
 
             val headers = call.argument<Map<String, String>>("headers")
             if (!headers.isNullOrEmpty()) {

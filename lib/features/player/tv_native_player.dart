@@ -5,9 +5,12 @@ import '../../core/di/injector.dart';
 import '../../core/models/episode.dart';
 import '../../core/models/video_source.dart';
 import '../../core/playback/playback_prefs.dart';
+import '../../core/playback/title_prefs.dart';
 import '../../core/playback/resume_store.dart';
 import '../../core/playback/skip_service.dart';
 import '../../core/playback/source_selection.dart';
+import '../../core/playback/subtitle_font_stage.dart';
+import '../../core/playback/subtitle_search_service.dart';
 import '../../core/playback/tv_track_helpers.dart';
 import '../../core/playback/watch_history.dart';
 import '../../core/theme/app_colors.dart';
@@ -46,6 +49,7 @@ class TvNativePlayer {
   static Map<String, String>? _coverHeaders;
   static int? _malId;
   static String? _skipTitle; // anime title for AniSkip (null = no skips)
+  static List<SubtitleSearchResult> _subResults = const []; // last online search
   static String _category = 'sub';
   static ResumeStore? _resume;
   static String? _torrentId; // active torrent stream (stopped on switch/close)
@@ -91,6 +95,18 @@ class TvNativePlayer {
     if (playUrl == null) return; // torrent failed / Wi-Fi-only
     final mark = resume.get(sourceId, _showId, ep.id);
 
+    // Full subtitle style, computed the SAME way as the Flutter PlatformView TV
+    // player so both render identically (colour, box, outline, position, font).
+    final prefs = sl<PlaybackPrefs>();
+    final subStyle = captionStyleFromPrefs(
+      scale: prefs.subtitleScale,
+      colorHex: prefs.subtitleColorHex,
+      bgOpacity: prefs.subtitleBgOpacity,
+      position: prefs.subtitlePosition,
+      font: prefs.subtitleFont,
+    );
+    final subFontPath = await stageSubtitleFont(prefs.subtitleFont);
+
     final res = await _ch.invokeMapMethod<String, dynamic>('launch', {
       ..._streamPayload(src, mark?.position.inMilliseconds ?? 0),
       'url': playUrl, // torrent → local stream URL; otherwise unchanged
@@ -102,13 +118,20 @@ class TvNativePlayer {
       'category': category,
       'availableCategories': availableCategories,
       'accentColor': AppColors.accent.toARGB32(),
-      'softwareDecoding': sl<PlaybackPrefs>().tvSoftwareDecoding,
+      'softwareDecoding': prefs.tvSoftwareDecoding,
       // Playback + subtitle-style defaults from the shared prefs.
-      'defaultSpeed': sl<PlaybackPrefs>().defaultSpeed,
-      'volumeBoost': sl<PlaybackPrefs>().volumeBoost,
-      'subtitleScale': sl<PlaybackPrefs>().subtitleScale,
-      'subtitleColor': sl<PlaybackPrefs>().subtitleColorHex,
-      'subtitleBgOpacity': sl<PlaybackPrefs>().subtitleBgOpacity,
+      'defaultSpeed': prefs.defaultSpeed,
+      'volumeBoost': prefs.volumeBoost,
+      'subtitleScale': subStyle.scale,
+      'subtitleFgColor': subStyle.fgColor,
+      'subtitleBgColor': subStyle.bgColor,
+      'subtitleEdge': subStyle.edge,
+      'subtitlePosition': subStyle.position,
+      'subtitleFontPath': ?subFontPath,
+      'subtitleApiKeySet': prefs.subtitleApiKey.trim().isNotEmpty,
+      'megaSkip': prefs.megaSkip,
+      'megaSkipSeconds': prefs.megaSkipSeconds,
+      'skipIntro': prefs.skipIntro,
     });
 
     // Player closed — stop any active torrent stream.
@@ -149,6 +172,49 @@ class TvNativePlayer {
           (args['durationMs'] as num?)?.toInt() ?? 0,
         );
         return null;
+      case 'setCategory':
+        // The native player switched sub/dub — remember it for this title so the
+        // next launch opens in the same version (mirrors the ExoPlayer player).
+        final cat = (call.arguments as Map)['category'] as String?;
+        if (cat != null) {
+          _category = cat;
+          if (_showUrl != null) {
+            await sl<TitlePrefsStore>().setCategory(_sourceId, _showUrl!, cat);
+          }
+        }
+        return null;
+      case 'setSubtitleScale':
+        // In-player subtitle-size change — persist so it sticks next launch.
+        final s = (call.arguments as Map)['scale'] as num?;
+        if (s != null) await sl<PlaybackPrefs>().setSubtitleScale(s.toDouble());
+        return null;
+      case 'searchSubtitles':
+        // OpenSubtitles search for the current show; results cached for download.
+        final pref = sl<PlaybackPrefs>().subtitlePreference;
+        final lang = (pref.isEmpty || pref == 'off') ? 'en' : pref;
+        try {
+          _subResults = await SubtitleSearchService().search(_showTitle, language: lang);
+        } catch (_) {
+          _subResults = const [];
+        }
+        return [
+          for (final r in _subResults) {'name': r.name, 'language': r.language},
+        ];
+      case 'downloadSubtitle':
+        final idx = ((call.arguments as Map)['index'] as num?)?.toInt() ?? -1;
+        if (idx < 0 || idx >= _subResults.length) return null;
+        try {
+          final r = _subResults[idx];
+          final path = await SubtitleSearchService().download(r);
+          return {
+            'path': path,
+            'language': r.language,
+            'name': r.name,
+            'format': r.format,
+          };
+        } catch (_) {
+          return null;
+        }
       case 'resolveTorrent':
         // A magnet/.torrent picked from the Sources menu → local stream URL.
         final url = (call.arguments as Map)['url'] as String?;
