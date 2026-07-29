@@ -132,43 +132,61 @@ query ($start: Int, $end: Int, $page: Int) {
   }
 
   /// Paginated AniList airingSchedules fetch for a UTC-epoch-seconds window.
+  /// Fetches page 1 first (so an empty or single-page window bails cheaply),
+  /// then the remaining pages in one parallel batch. AniList reports
+  /// hasNextPage against a capped total, so the old page-by-page loop never
+  /// broke early and always ran the full [maxPages] one after another — the
+  /// parallel batch collapses that to ~2 round-trips instead of [maxPages].
   /// Never throws — returns `[]` on any error.
   Future<List<AiringEntry>> _fetchRange(
     int startSec,
     int endSec, {
     required int maxPages,
   }) async {
-    final all = <AiringEntry>[];
     try {
-      for (var page = 1; page <= maxPages; page++) {
-        final res = await _dio.post<dynamic>(
-          _kAniListEndpoint,
-          data: {
-            'query': _query,
-            'variables': {'start': startSec, 'end': endSec, 'page': page},
-          },
-          options: Options(
-            headers: const {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            validateStatus: (s) => s != null && s < 500,
-          ),
-        );
-        final data = res.data;
-        final root = (data is Map && data['data'] is Map)
-            ? Map<String, dynamic>.from(data['data'] as Map)
-            : const <String, dynamic>{};
-        all.addAll(parseAiringSchedules(root));
-        final page0 = root['Page'];
-        final hasNext = (page0 is Map && page0['pageInfo'] is Map)
-            ? page0['pageInfo']['hasNextPage'] == true
-            : false;
-        if (!hasNext) break;
-      }
+      final first = await _fetchPage(startSec, endSec, 1);
+      if (maxPages <= 1 || !first.hasNext) return first.entries;
+      final rest = await Future.wait([
+        for (var page = 2; page <= maxPages; page++)
+          _fetchPage(startSec, endSec, page),
+      ]);
+      return [
+        ...first.entries,
+        for (final r in rest) ...r.entries,
+      ];
     } catch (_) {
       return const [];
     }
-    return all;
+  }
+
+  /// One AniList page → its entries plus whether AniList claims more pages.
+  Future<({List<AiringEntry> entries, bool hasNext})> _fetchPage(
+    int startSec,
+    int endSec,
+    int page,
+  ) async {
+    final res = await _dio.post<dynamic>(
+      _kAniListEndpoint,
+      data: {
+        'query': _query,
+        'variables': {'start': startSec, 'end': endSec, 'page': page},
+      },
+      options: Options(
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        validateStatus: (s) => s != null && s < 500,
+      ),
+    );
+    final data = res.data;
+    final root = (data is Map && data['data'] is Map)
+        ? Map<String, dynamic>.from(data['data'] as Map)
+        : const <String, dynamic>{};
+    final page0 = root['Page'];
+    final hasNext = (page0 is Map && page0['pageInfo'] is Map)
+        ? page0['pageInfo']['hasNextPage'] == true
+        : false;
+    return (entries: parseAiringSchedules(root), hasNext: hasNext);
   }
 }

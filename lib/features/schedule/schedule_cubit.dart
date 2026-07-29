@@ -184,7 +184,20 @@ class ScheduleCubit extends Cubit<ScheduleState> {
   /// Switch the week/month toggle. Entering month lazily loads its data.
   Future<void> setView(ScheduleView view) async {
     if (view == state.view) return;
-    emit(state.copyWith(view: view));
+    var next = state.copyWith(view: view);
+    if (view == ScheduleView.week) {
+      // The week strip only covers today..+6 days, but the month grid lets the
+      // user pick any day. If the current selection is outside this week, snap
+      // it back to today — otherwise the week view would look up an out-of-week
+      // day and render an empty "Nothing airing on this day".
+      final today = _dayOf(DateTime.now());
+      final sel = state.selectedDay;
+      final inWeek = sel != null &&
+          !sel.isBefore(today) &&
+          sel.isBefore(today.add(const Duration(days: 7)));
+      if (!inWeek) next = next.copyWith(selectedDay: today);
+    }
+    emit(next);
     if (view == ScheduleView.month) {
       final anchor = state.monthAnchor ?? _firstOfMonth(DateTime.now());
       if (state.monthAiringByDay.isEmpty) await _loadMonth(anchor);

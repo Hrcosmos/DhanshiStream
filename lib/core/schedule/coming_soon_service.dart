@@ -85,27 +85,56 @@ Map<DateTime, List<ComingSoonEntry>> groupSoonByLocalDay(
   return map;
 }
 
-/// Fetches upcoming movies + on-the-air TV from TMDB (key added by the Dio
-/// interceptor for Tmdb.host). Returns `[]` on any error.
+/// Fetches genuinely-upcoming movies + TV from TMDB Discover (key added by the
+/// Dio interceptor for Tmdb.host). Returns `[]` on any error.
 class ComingSoonService {
   ComingSoonService(this._dio);
   final Dio _dio;
 
   Future<List<ComingSoonEntry>> upcoming() async {
+    final today = DateTime.now();
+    final from = _tmdbDate(today);
+    // ~6 weeks out: covers the week strip and the month grid while staying a
+    // bounded, fast window. We use Discover with an explicit forward date range
+    // instead of /movie/upcoming + /tv/on_the_air — those are rolling lists that
+    // are mostly already-released titles (their dates land in the recent past),
+    // so onlyUpcoming dropped nearly all of them and the movies side came back
+    // empty. Discover returns titles that actually release in the window;
+    // popularity.desc leads with the notable ones, not obscure same-day filler.
+    final to = _tmdbDate(today.add(const Duration(days: 42)));
     try {
-      final movieRes = await _dio.get<dynamic>('${Tmdb.base}/movie/upcoming');
-      final tvRes = await _dio.get<dynamic>('${Tmdb.base}/tv/on_the_air');
-      final movies = _results(movieRes.data);
-      final tv = _results(tvRes.data);
-      final merged = mergeSortByDate(
-        parseTmdbResults(movies, isTv: false),
-        parseTmdbResults(tv, isTv: true),
+      final movieRes = await _dio.get<dynamic>(
+        '${Tmdb.base}/discover/movie',
+        queryParameters: {
+          'primary_release_date.gte': from,
+          'primary_release_date.lte': to,
+          'sort_by': 'popularity.desc',
+          'with_release_type': '2|3', // theatrical + digital; skips festival/TV-movie noise
+        },
       );
-      return onlyUpcoming(merged, DateTime.now());
+      final tvRes = await _dio.get<dynamic>(
+        '${Tmdb.base}/discover/tv',
+        queryParameters: {
+          'first_air_date.gte': from,
+          'first_air_date.lte': to,
+          'sort_by': 'popularity.desc',
+        },
+      );
+      final merged = mergeSortByDate(
+        parseTmdbResults(_results(movieRes.data), isTv: false),
+        parseTmdbResults(_results(tvRes.data), isTv: true),
+      );
+      return onlyUpcoming(merged, today); // safety net; Discover is already future-only
     } catch (_) {
       return const [];
     }
   }
+
+  /// TMDB date filters want `YYYY-MM-DD`.
+  static String _tmdbDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   List<dynamic> _results(dynamic data) =>
       (data is Map && data['results'] is List) ? data['results'] as List : const [];
