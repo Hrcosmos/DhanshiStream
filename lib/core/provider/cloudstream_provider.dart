@@ -581,6 +581,9 @@ class CloudStreamProvider implements BaseProvider {
       // The opaque CloudStream dataUrl — passed straight back to loadLinks.
       url: (e['data'] ?? '').toString(),
       thumbnail: (e['posterUrl'] as String?),
+      // CloudStream reports the season per episode; keep it so the season
+      // selector works even when the title has no "S1"-style prefix.
+      season: season,
     );
   }
 }

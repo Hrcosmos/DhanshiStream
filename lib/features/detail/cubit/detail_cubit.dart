@@ -261,12 +261,17 @@ int? parseSeason(String title) {
   return int.tryParse(m.group(1)!);
 }
 
+/// The season an episode belongs to: the source-reported field when present
+/// (CloudStream sets it per episode), else parsed from the title's `S<n>`
+/// prefix. Sources that report neither are treated as single-season.
+int? seasonOf(Episode ep) => ep.season ?? parseSeason(ep.title);
+
 /// Derive the set of seasons present in the episode list.
-/// Returns an empty set when no episode has a season prefix (single-season).
+/// Returns an empty set when no episode reports a season (single-season).
 Set<int> seasonsOf(List<Episode> eps) {
   final result = <int>{};
   for (final ep in eps) {
-    final s = parseSeason(ep.title);
+    final s = seasonOf(ep);
     if (s != null) result.add(s);
   }
   return result;

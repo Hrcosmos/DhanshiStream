@@ -36,7 +36,7 @@ import '../../core/ui/brand_loader.dart';
 import '../../core/ui/frosted_surface.dart';
 import '../../core/ui/subtitle_language_picker.dart';
 import '../detail/cubit/detail_cubit.dart'
-    show parseSeason, seasonsOf, cleanTitle;
+    show seasonOf, seasonsOf, cleanTitle;
 import '../../core/cast/cast_controller.dart';
 import '../../core/cast/cast_proxy.dart';
 import '../watch_together/watch_together_controller.dart';
@@ -4251,7 +4251,7 @@ class _EpisodesPanelState extends State<_EpisodesPanel> {
     }
     final bySeason = <int, List<int>>{};
     for (var i = 0; i < widget.episodes.length; i++) {
-      (bySeason[parseSeason(widget.episodes[i].title) ?? 1] ??= []).add(i);
+      (bySeason[seasonOf(widget.episodes[i]) ?? 1] ??= []).add(i);
     }
     final out = <_PanelItem>[];
     for (final s in bySeason.keys.toList()..sort()) {

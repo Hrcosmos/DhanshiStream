@@ -325,7 +325,7 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
     );
     final byS = <int, List<Episode>>{};
     for (final e in d.episodes) {
-      (byS[parseSeason(e.title) ?? 1] ??= <Episode>[]).add(e);
+      (byS[seasonOf(e) ?? 1] ??= <Episode>[]).add(e);
     }
     if (byS.isEmpty) byS[1] = d.episodes;
     return byS;
@@ -497,13 +497,13 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
               : seasonSet.first)
         : 1;
     final seasonEps = hasMultipleSeasons
-        ? eps.where((e) => parseSeason(e.title) == currentSeason).toList()
+        ? eps.where((e) => seasonOf(e) == currentSeason).toList()
         : eps;
 
     final episodesBySeason = <int, List<Episode>>{};
     if (hasMultipleSeasons) {
       for (final e in eps) {
-        (episodesBySeason[parseSeason(e.title) ?? 1] ??= <Episode>[]).add(e);
+        (episodesBySeason[seasonOf(e) ?? 1] ??= <Episode>[]).add(e);
       }
     } else {
       episodesBySeason[1] = eps;

@@ -18,6 +18,13 @@ class Episode extends Equatable {
   @JsonKey(defaultValue: false)
   final bool filler;
 
+  /// Season number when the source reports one per episode (CloudStream does).
+  /// Null for sources that don't — season is then derived from the title
+  /// prefix. Not serialized: the detail screen always fetches episodes fresh,
+  /// so this never needs to survive a JSON round-trip.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final int? season;
+
   const Episode({
     required this.id,
     required this.title,
@@ -26,6 +33,7 @@ class Episode extends Equatable {
     this.date,
     this.thumbnail,
     this.filler = false,
+    this.season,
   });
 
   factory Episode.fromJson(Map<String, dynamic> json) =>
@@ -33,5 +41,6 @@ class Episode extends Equatable {
   Map<String, dynamic> toJson() => _$EpisodeToJson(this);
 
   @override
-  List<Object?> get props => [id, title, number, url, date, thumbnail, filler];
+  List<Object?> get props =>
+      [id, title, number, url, date, thumbnail, filler, season];
 }
