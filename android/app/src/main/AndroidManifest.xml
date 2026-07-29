@@ -152,5 +152,11 @@
         <package android:name="is.xyz.mpv"/>
         <package android:name="com.brouken.player"/>
         <package android:name="dev.anilbeesetti.nextplayer"/>
+        <!-- UPI apps — the donate screen deep-links upi://pay. Needed for
+             url_launcher to resolve an installed UPI app on Android 11+. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="upi"/>
+        </intent>
     </queries>
 </manifest>
