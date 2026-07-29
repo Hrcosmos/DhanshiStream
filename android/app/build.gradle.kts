@@ -118,6 +118,22 @@ flutter {
     source = "../.."
 }
 
+// CloudStream plugins built against the pre-release API inline newer kotlinx
+// runtime calls straight into their own dex. FourKHDHub/HDhub4u (and other
+// recently-rebuilt Phisher plugins) call kotlinx.coroutines BuildersKt.runBlockingK,
+// which only exists from coroutines 1.11.0 — the transitive resolve is 1.10.2, so
+// they fail to load ("cs_load_failed / needs a newer app version"). 1.11.0 is a
+// backward-compatible superset (still has runBlocking etc.); force it on every
+// configuration so the plugin classpath actually links. Plain `implementation`
+// only wins the version graph, not the dexed classpath under the build cache.
+configurations.configureEach {
+    resolutionStrategy {
+        force("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+        force("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
+        force("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    }
+}
+
 // ── CloudStream extension support (feature/extra) ─────────────────────────────
 // Bundles the CloudStream runtime so .cs3 plugins can be DexClassLoaded against
 // it. GPL-3.0 — see docs/cloudstream-integration-spec.md §7.
@@ -180,6 +196,18 @@ dependencies {
     // parseAs()/decodeFromJsonResponse() decode JSON straight off the OkHttp
     // BufferedSource — this is the only kotlinx-serialization piece not already present.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.9.0")
+    // CloudStream (v4.8.0/pre-release) added Ktor, and plugins' extractors now use
+    // it for URL parsing — e.g. HDhub4u/FourKHDHub's VidStack calls
+    // io.ktor.http.URLUtilsKt/Url/URLProtocol/CodecsKt. This build shipped no Ktor,
+    // so those extractors throw NoClassDefFoundError at loadLinks time → "No playable
+    // source" (the source loads fine in CloudStream, which has Ktor). We pin 3.2.x,
+    // NOT CloudStream's 3.5.0: 3.5.0 requires kotlin-stdlib 2.3.x and drags the whole
+    // graph forward, which our pinned Kotlin 2.2.20 compiler can't read (broke the
+    // vendored Aniyomi code). 3.2.x's stdlib floor is ≤2.2.x so there's no upward
+    // pull — compile stays clean. The 4 io.ktor.http URL classes the plugins use are
+    // stable across all 3.x, so the plugin (built vs 3.5.0) runs fine against 3.2.x.
+    // runtimeOnly: only the dex-loaded plugin uses Ktor, never our own Kotlin.
+    runtimeOnly("io.ktor:ktor-http:3.2.3")
     // androidx.preference backs ConfigurableAnimeSource.setupPreferenceScreen (the
     // PreferenceScreen typealias). Present transitively at runtime; declared here so
     // it's also on the compile classpath. Same version already resolved.
