@@ -75,7 +75,16 @@ Future<void> main() async {
       url: Environment.supabaseUrl,
       anonKey: Environment.supabaseAnonKey,
     );
-    MediaKit.ensureInitialized();
+    // The media_kit mpv fork's native init throws on some old Android 8 / Fire TV
+    // devices (its newer native libs don't load there). Uncaught, that throw
+    // skips runApp below and the whole app black-screens with no widget tree —
+    // which is exactly what those devices showed. Guard it so the UI always
+    // renders; playback may be unavailable on that hardware, but the app works.
+    try {
+      MediaKit.ensureInitialized();
+    } catch (e, st) {
+      AppLogger.instance.logError(e, st);
+    }
     // Dependency init happens inside the boot gate so the splash shows
     // immediately instead of a blank screen.
     runApp(const WatchApp());

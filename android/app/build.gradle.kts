@@ -59,6 +59,14 @@ android {
     packaging {
         jniLibs {
             excludes += listOf("**/x86/**", "**/x86_64/**")
+            // Extract native libs to the device's lib dir (extractNativeLibs=true).
+            // The modern default (false = libs stay uncompressed inside the APK)
+            // makes media_kit's libmpv.so lookup fail on some devices (old Android
+            // 8, Fire TV) → "Cannot find libmpv.so" → media_kit never initialises
+            // → boot black-screen + gray video. Extracting makes the lib reliably
+            // findable on every device. Costs a little on-device storage; zero
+            // functional change on devices that already worked.
+            useLegacyPackaging = true
         }
         // CloudStream library (feature/extra) pulls okhttp/jspecify/etc. that
         // clash on duplicate META-INF entries — drop the non-essential ones.
