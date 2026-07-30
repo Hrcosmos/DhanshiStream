@@ -8,6 +8,8 @@ import java.io.IOException
 import java.util.ArrayDeque
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * An OkHttp interceptor that handles rate limiting.
@@ -28,6 +30,25 @@ fun OkHttpClient.Builder.rateLimit(
     period: Long = 1,
     unit: TimeUnit = TimeUnit.SECONDS,
 ) = addInterceptor(RateLimitInterceptor(null, permits, period, unit))
+
+/**
+ * Duration overload. Newer extension-lib migrated rateLimit() from
+ * (Int, Long, TimeUnit) to (Int, Duration); extensions compiled against it call
+ * this mangled signature (e.g. AniZone -> rateLimit-…$default). Mirrors the
+ * rateLimitHost() Duration overload that already exists. The Long overload above
+ * stays so older-lib extensions still resolve.
+ */
+fun OkHttpClient.Builder.rateLimit(
+    permits: Int,
+    period: Duration = 1.seconds,
+) = addInterceptor(
+    RateLimitInterceptor(
+        host = null,
+        permits = permits,
+        period = period.inWholeMilliseconds.coerceAtLeast(1L),
+        unit = TimeUnit.MILLISECONDS,
+    ),
+)
 
 /** We can probably accept domains or wildcards by comparing with [endsWith], etc. */
 @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
