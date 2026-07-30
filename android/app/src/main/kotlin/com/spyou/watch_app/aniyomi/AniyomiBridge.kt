@@ -80,7 +80,20 @@ class AniyomiBridge(
                         withContext(Dispatchers.Main) {
                             r.fold(
                                 onSuccess = { result.success(true) },
-                                onFailure = { err -> result.error("LOAD", err.message, null) },
+                                onFailure = { err ->
+                                    // newInstance() wraps the real failure in an
+                                    // InvocationTargetException (message == null) and the
+                                    // cause was being dropped, so every load failure showed
+                                    // "No source loaded" with nothing to go on. Log the full
+                                    // chain and surface the root cause.
+                                    android.util.Log.e("AniyomiLoad", "extension load failed", err)
+                                    val root = generateSequence(err as Throwable) { it.cause }.last()
+                                    val detail = "${err::class.java.simpleName}: ${err.message}" +
+                                        if (root !== err) {
+                                            " | cause: ${root::class.java.simpleName}: ${root.message}"
+                                        } else ""
+                                    result.error("LOAD", detail, null)
+                                },
                             )
                         }
                     }
