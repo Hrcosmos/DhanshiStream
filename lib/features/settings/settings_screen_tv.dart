@@ -15,6 +15,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_focusable.dart';
 import '../../core/ui/settings_widgets.dart';
+import '../../core/update/update_service.dart';
 import '../auth/auth_cubit.dart';
 import '../auth/auth_screens.dart';
 import '../backup/backup_screen.dart';
@@ -65,6 +66,9 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
   /// currently active for CS sources.
   int _dnsChoice = CsDns.off;
 
+  final UpdateService _updateService = UpdateService();
+  bool _betaUpdates = false;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +77,9 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
         if (mounted) setState(() => _dnsChoice = c);
       });
     }
+    _updateService.betaOptIn().then((v) {
+      if (mounted) setState(() => _betaUpdates = v);
+    });
   }
 
   // ── Getters (mirror phone state) ──────────────────────────────────────────
@@ -450,6 +457,37 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
                                 onChanged: (v) async {
                                   await sl<CloudStreamManager>().setNotifyUpdates(v);
                                   if (mounted) setState(() {});
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        TvFocusable(scale: 1.0,
+                          onTap: () async {
+                            final v = !_betaUpdates;
+                            await _updateService.setBetaOptIn(v);
+                            if (!mounted) return;
+                            setState(() => _betaUpdates = v);
+                            if (v) maybeShowUpdateDialog(context, manual: true);
+                          },
+                          semanticLabel:
+                              'Beta updates, ${_betaUpdates ? 'on' : 'off'}',
+                          child: ExcludeSemantics(
+                            child: SettingsTile(
+                              icon: Icons.science_outlined,
+                              title: 'Beta updates',
+                              subtitle:
+                                  'Get pre-release builds early — may be unstable',
+                              trailing: Switch.adaptive(
+                                value: _betaUpdates,
+                                activeThumbColor: AppColors.accent,
+                                onChanged: (v) async {
+                                  await _updateService.setBetaOptIn(v);
+                                  if (!mounted) return;
+                                  setState(() => _betaUpdates = v);
+                                  if (v) {
+                                    maybeShowUpdateDialog(context, manual: true);
+                                  }
                                 },
                               ),
                             ),
