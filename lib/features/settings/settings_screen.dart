@@ -731,7 +731,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (!mounted) return;
             setState(() => _betaUpdates = v);
             // Turning it on: check right away so a waiting beta shows up.
-            if (v) maybeShowUpdateDialog(context, manual: true);
+            if (v && context.mounted) maybeShowUpdateDialog(context, manual: true);
           },
         ),
       ),

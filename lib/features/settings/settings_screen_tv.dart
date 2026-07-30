@@ -468,7 +468,9 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
                             await _updateService.setBetaOptIn(v);
                             if (!mounted) return;
                             setState(() => _betaUpdates = v);
-                            if (v) maybeShowUpdateDialog(context, manual: true);
+                            if (v && context.mounted) {
+                              maybeShowUpdateDialog(context, manual: true);
+                            }
                           },
                           semanticLabel:
                               'Beta updates, ${_betaUpdates ? 'on' : 'off'}',
@@ -485,7 +487,7 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
                                   await _updateService.setBetaOptIn(v);
                                   if (!mounted) return;
                                   setState(() => _betaUpdates = v);
-                                  if (v) {
+                                  if (v && context.mounted) {
                                     maybeShowUpdateDialog(context, manual: true);
                                   }
                                 },
