@@ -36,6 +36,77 @@ Future<void> maybeShowUpdateDialog(
   );
 }
 
+/// Confirmation shown when the user flips the "Beta updates" switch on, so it's
+/// never a silent opt-in. Returns true if they chose to join.
+Future<bool> confirmJoinBeta(BuildContext context) async {
+  final joined = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.science_outlined, color: AppColors.accent, size: 26),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Join beta updates?', style: AppText.title),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "You'll get pre-release builds early. They can be unstable — if "
+              "one acts up, just turn this off and you'll move back to stable on "
+              "the next update. You can leave anytime.",
+              style: AppText.body.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: Text(
+                      'Not now',
+                      style: AppText.button.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: Text(
+                      'Join beta',
+                      style: AppText.button.copyWith(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return joined ?? false;
+}
+
 class _UpdateDialog extends StatefulWidget {
   const _UpdateDialog({required this.info, required this.service});
 

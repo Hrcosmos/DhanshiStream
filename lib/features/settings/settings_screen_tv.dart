@@ -465,6 +465,7 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
                         TvFocusable(scale: 1.0,
                           onTap: () async {
                             final v = !_betaUpdates;
+                            if (v && !await confirmJoinBeta(context)) return;
                             await _updateService.setBetaOptIn(v);
                             if (!mounted) return;
                             setState(() => _betaUpdates = v);
@@ -480,10 +481,14 @@ class _SettingsScreenTvState extends State<SettingsScreenTv> {
                               title: 'Beta updates',
                               subtitle:
                                   'Get pre-release builds early — may be unstable',
+                              subtitleMaxLines: null,
                               trailing: Switch.adaptive(
                                 value: _betaUpdates,
                                 activeThumbColor: AppColors.accent,
                                 onChanged: (v) async {
+                                  if (v && !await confirmJoinBeta(context)) {
+                                    return;
+                                  }
                                   await _updateService.setBetaOptIn(v);
                                   if (!mounted) return;
                                   setState(() => _betaUpdates = v);

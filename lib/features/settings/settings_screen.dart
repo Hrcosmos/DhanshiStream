@@ -722,15 +722,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         icon: Icons.science_outlined,
         title: 'Beta updates',
         subtitle: 'Get pre-release builds early — may be unstable',
+        subtitleMaxLines: null,
         keywords: 'beta prerelease pre-release early test unstable channel updates',
         trailing: Switch.adaptive(
           value: _betaUpdates,
           activeThumbColor: AppColors.accent,
           onChanged: (v) async {
+            // Turning it on: confirm first so it's never a silent opt-in.
+            if (v && !await confirmJoinBeta(context)) return;
             await _updateService.setBetaOptIn(v);
             if (!mounted) return;
             setState(() => _betaUpdates = v);
-            // Turning it on: check right away so a waiting beta shows up.
+            // Then check right away so a waiting beta shows up.
             if (v && context.mounted) maybeShowUpdateDialog(context, manual: true);
           },
         ),
@@ -891,6 +894,7 @@ class _SettingsEntry {
     this.keywords = '',
     this.trailing,
     this.onTap,
+    this.subtitleMaxLines = 1,
   });
 
   final String section;
@@ -903,6 +907,9 @@ class _SettingsEntry {
   final Widget? trailing;
   final VoidCallback? onTap;
 
+  /// Max description lines before ellipsis; null lets a long subtitle wrap.
+  final int? subtitleMaxLines;
+
   /// [q] is already lower-cased by the caller.
   bool matches(String q) =>
       '$title ${subtitle ?? ''} $keywords $section'.toLowerCase().contains(q);
@@ -913,6 +920,7 @@ class _SettingsEntry {
     subtitle: subtitle,
     trailing: trailing,
     onTap: onTap,
+    subtitleMaxLines: subtitleMaxLines,
   );
 }
 
