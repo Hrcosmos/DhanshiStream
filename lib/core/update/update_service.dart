@@ -16,6 +16,7 @@ class UpdateInfo {
     required this.apkUrl,
     required this.assetName,
     required this.apkSize,
+    this.isPrerelease = false,
   });
 
   /// Normalised version, e.g. "1.3.0".
@@ -33,6 +34,9 @@ class UpdateInfo {
   /// Expected byte size of the asset (from the GitHub API), used to verify the
   /// download completed intact. 0 when unknown.
   final int apkSize;
+
+  /// True when the chosen release is a GitHub pre-release (beta).
+  final bool isPrerelease;
 }
 
 /// In-app updater: checks the public GitHub Releases of the app repo, compares
@@ -44,6 +48,7 @@ class UpdateService {
       'https://api.github.com/repos/$_repo/releases/latest';
   static const String _boxName = 'updates';
   static const String _skipKey = 'skippedVersion';
+  static const String _betaKey = 'betaOptIn';
 
   final Dio _dio = Dio();
 
@@ -152,6 +157,14 @@ class UpdateService {
 
   Future<String?> _skippedVersion() async =>
       (await _box()).get(_skipKey) as String?;
+
+  /// Whether the user opted into pre-release (beta) updates. Defaults to false.
+  Future<bool> betaOptIn() async =>
+      (await _box()).get(_betaKey, defaultValue: false) as bool;
+
+  /// Persist the beta opt-in choice.
+  Future<void> setBetaOptIn(bool value) async =>
+      (await _box()).put(_betaKey, value);
 
   Future<Box> _box() async => Hive.isBoxOpen(_boxName)
       ? Hive.box(_boxName)
