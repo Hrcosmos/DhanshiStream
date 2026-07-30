@@ -219,4 +219,44 @@ class UpdateService {
     }
     return false;
   }
+
+  /// Compare two version strings with semver pre-release ordering.
+  /// Returns <0 if [a] < [b], 0 if equal, >0 if [a] > [b].
+  /// A leading "v" is ignored. Rules: higher numeric core wins; on an equal
+  /// core a final build (no "-label") outranks a pre-release ("-betaN"); two
+  /// pre-releases are ordered by the label's trailing integer (beta2 > beta1).
+  static int compareVersions(String a, String b) {
+    final pa = _parseVersion(a);
+    final pb = _parseVersion(b);
+    final len = pa.core.length > pb.core.length ? pa.core.length : pb.core.length;
+    for (var i = 0; i < len; i++) {
+      final x = i < pa.core.length ? pa.core[i] : 0;
+      final y = i < pb.core.length ? pb.core[i] : 0;
+      if (x != y) return x < y ? -1 : 1;
+    }
+    // Cores equal → a final (pre == null) is greater than any pre-release.
+    if (pa.pre == null && pb.pre == null) return 0;
+    if (pa.pre == null) return 1;
+    if (pb.pre == null) return -1;
+    if (pa.pre != pb.pre) return pa.pre! < pb.pre! ? -1 : 1;
+    return 0;
+  }
+
+  /// "v1.9.2-beta3" → (core: [1,9,2], pre: 3). No label → pre == null. A label
+  /// without digits ("beta") → pre == 0.
+  static ({List<int> core, int? pre}) _parseVersion(String raw) {
+    var s = raw.trim();
+    if (s.startsWith('v') || s.startsWith('V')) s = s.substring(1);
+    final dash = s.indexOf('-');
+    final corePart = dash >= 0 ? s.substring(0, dash) : s;
+    final label = dash >= 0 ? s.substring(dash + 1) : null;
+    final core =
+        corePart.split('.').map((e) => int.tryParse(e.trim()) ?? 0).toList();
+    int? pre;
+    if (label != null) {
+      final m = RegExp(r'(\d+)').firstMatch(label);
+      pre = m != null ? int.parse(m.group(1)!) : 0;
+    }
+    return (core: core, pre: pre);
+  }
 }
