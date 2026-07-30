@@ -111,7 +111,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Update available', style: AppText.title),
+                  child: Text(
+                    widget.info.isPrerelease
+                        ? 'Beta update available'
+                        : 'Update available',
+                    style: AppText.title,
+                  ),
                 ),
               ],
             ),
