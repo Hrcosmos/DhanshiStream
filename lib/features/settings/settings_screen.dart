@@ -43,6 +43,7 @@ import '../../core/theme/theme_controller.dart';
 import '../../core/ui/source_switcher.dart';
 import '../../core/ui/subtitle_language_picker.dart';
 import '../../core/theme/app_text.dart';
+import '../../core/update/update_service.dart';
 import '../update/update_dialog.dart';
 import '../../core/ui/settings_widgets.dart';
 import 'developers_screen.dart';
@@ -75,6 +76,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
+  final UpdateService _updateService = UpdateService();
+  bool _betaUpdates = false;
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +87,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) setState(() => _dnsChoice = c);
       });
     }
+    _updateService.betaOptIn().then((v) {
+      if (mounted) setState(() => _betaUpdates = v);
+    });
   }
 
   @override
@@ -709,6 +716,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           maybeShowUpdateDialog(context, manual: true);
         },
+      ),
+      _SettingsEntry(
+        section: 'About',
+        icon: Icons.science_outlined,
+        title: 'Beta updates',
+        subtitle: 'Get pre-release builds early — may be unstable',
+        keywords: 'beta prerelease pre-release early test unstable channel updates',
+        trailing: Switch.adaptive(
+          value: _betaUpdates,
+          activeThumbColor: AppColors.accent,
+          onChanged: (v) async {
+            await _updateService.setBetaOptIn(v);
+            if (!mounted) return;
+            setState(() => _betaUpdates = v);
+            // Turning it on: check right away so a waiting beta shows up.
+            if (v) maybeShowUpdateDialog(context, manual: true);
+          },
+        ),
       ),
       _SettingsEntry(
         section: 'About',
