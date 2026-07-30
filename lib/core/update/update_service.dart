@@ -46,6 +46,8 @@ class UpdateService {
   static const String _repo = 'Spyou/Zangetsu';
   static const String _latestUrl =
       'https://api.github.com/repos/$_repo/releases/latest';
+  static const String _releasesUrl =
+      'https://api.github.com/repos/$_repo/releases?per_page=10';
   static const String _boxName = 'updates';
   static const String _skipKey = 'skippedVersion';
   static const String _betaKey = 'betaOptIn';
@@ -58,39 +60,79 @@ class UpdateService {
   /// callers must treat null as "nothing to do" (never throws).
   Future<UpdateInfo?> checkForUpdate({bool respectSkip = false}) async {
     try {
-      final res = await _dio.get<Map<String, dynamic>>(
-        _latestUrl,
-        options: Options(
-          headers: const {'Accept': 'application/vnd.github+json'},
-          receiveTimeout: const Duration(seconds: 12),
-          sendTimeout: const Duration(seconds: 12),
-        ),
-      );
-      final data = res.data;
-      if (data == null) return null;
+      final beta = await betaOptIn();
+      final release =
+          beta ? await _newestBetaRelease() : await _latestStableRelease();
+      if (release == null) return null;
 
-      final latest = _normalize((data['tag_name'] as String?) ?? '');
-      if (latest.isEmpty) return null;
+      final rawTag = ((release['tag_name'] as String?) ?? '').trim();
+      if (rawTag.isEmpty) return null;
+      final version = rawTag.startsWith('v') ? rawTag.substring(1) : rawTag;
 
-      final info = await PackageInfo.fromPlatform();
-      final current = _normalize(info.version);
-      if (!_isNewer(latest, current)) return null;
+      final pkg = await PackageInfo.fromPlatform();
+      if (compareVersions(version, pkg.version) <= 0) return null;
+      if (respectSkip && await _skippedVersion() == version) return null;
 
-      if (respectSkip && await _skippedVersion() == latest) return null;
-
-      final apk = _pickApk((data['assets'] as List?) ?? const [], await _deviceAbis());
+      final apk = _pickApk(
+          (release['assets'] as List?) ?? const [], await _deviceAbis());
       if (apk == null) return null;
 
       return UpdateInfo(
-        version: latest,
-        notes: ((data['body'] as String?) ?? '').trim(),
+        version: version,
+        notes: ((release['body'] as String?) ?? '').trim(),
         apkUrl: apk.$2,
         assetName: apk.$1,
         apkSize: apk.$3,
+        isPrerelease: release['prerelease'] == true,
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// Latest **stable** release — GitHub's /releases/latest excludes
+  /// pre-releases, so this is the toggle-off behaviour (unchanged from before).
+  Future<Map<String, dynamic>?> _latestStableRelease() async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      _latestUrl,
+      options: Options(
+        headers: const {'Accept': 'application/vnd.github+json'},
+        receiveTimeout: const Duration(seconds: 12),
+        sendTimeout: const Duration(seconds: 12),
+      ),
+    );
+    return res.data;
+  }
+
+  /// Newest release **including pre-releases** — the toggle-on behaviour.
+  /// Scans the recent releases list and returns the highest version by
+  /// [compareVersions]; skips drafts.
+  Future<Map<String, dynamic>?> _newestBetaRelease() async {
+    final res = await _dio.get<List<dynamic>>(
+      _releasesUrl,
+      options: Options(
+        headers: const {'Accept': 'application/vnd.github+json'},
+        receiveTimeout: const Duration(seconds: 12),
+        sendTimeout: const Duration(seconds: 12),
+      ),
+    );
+    final list = res.data;
+    if (list == null || list.isEmpty) return null;
+    Map<String, dynamic>? best;
+    var bestVer = '';
+    for (final item in list) {
+      if (item is! Map) continue;
+      final m = item.cast<String, dynamic>();
+      if (m['draft'] == true) continue;
+      final tag = ((m['tag_name'] as String?) ?? '').trim();
+      if (tag.isEmpty) continue;
+      final v = tag.startsWith('v') ? tag.substring(1) : tag;
+      if (best == null || compareVersions(v, bestVer) > 0) {
+        best = m;
+        bestVer = v;
+      }
+    }
+    return best;
   }
 
   /// The installed version string (e.g. "1.2.0"), for display.
@@ -212,25 +254,6 @@ class UpdateService {
       if (match != null) return match;
     }
     return withFrag('universal') ?? apks.first;
-  }
-
-  /// "v1.3.0+4" / "1.3.0-beta" → "1.3.0" (digits-and-dots only).
-  static String _normalize(String raw) {
-    final m = RegExp(r'(\d+(?:\.\d+)*)').firstMatch(raw.trim());
-    return m?.group(1) ?? '';
-  }
-
-  /// True when [a] is a strictly higher dotted-int version than [b].
-  static bool _isNewer(String a, String b) {
-    final pa = a.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-    final pb = b.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-    final len = pa.length > pb.length ? pa.length : pb.length;
-    for (var i = 0; i < len; i++) {
-      final x = i < pa.length ? pa[i] : 0;
-      final y = i < pb.length ? pb[i] : 0;
-      if (x != y) return x > y;
-    }
-    return false;
   }
 
   /// Compare two version strings with semver pre-release ordering.
