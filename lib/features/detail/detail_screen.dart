@@ -1440,6 +1440,7 @@ class _HeroTrailerState extends State<_HeroTrailer> {
                       ? Icons.play_arrow_rounded
                       : Icons.pause_rounded,
                   onTap: _togglePlay,
+                  semanticLabel: _paused ? 'Play trailer' : 'Pause trailer',
                 ),
                 if (_ready) ...[
                   const SizedBox(width: 8),
@@ -1448,6 +1449,7 @@ class _HeroTrailerState extends State<_HeroTrailer> {
                         ? Icons.volume_off_rounded
                         : Icons.volume_up_rounded,
                     onTap: _toggleMute,
+                    semanticLabel: _muted ? 'Unmute' : 'Mute',
                   ),
                 ],
               ],
@@ -1461,9 +1463,14 @@ class _HeroTrailerState extends State<_HeroTrailer> {
 // Small translucent circular icon button for the hero trailer controls
 // (mute/unmute and play/pause).
 class _HeroCircleButton extends StatelessWidget {
-  const _HeroCircleButton({required this.icon, required this.onTap});
+  const _HeroCircleButton({
+    required this.icon,
+    required this.onTap,
+    this.semanticLabel,
+  });
   final IconData icon;
   final VoidCallback onTap;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1472,20 +1479,24 @@ class _HeroCircleButton extends StatelessWidget {
     // painted child) so the whole 48dp square absorbs the tap — otherwise taps
     // in the ring around the icon fall through to the banner's fullscreen
     // gesture behind, which is what made the buttons feel unresponsive.
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: 48,
-        height: 48,
-        child: Center(
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Color(0x66000000),
-              shape: BoxShape.circle,
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Center(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0x66000000),
+                shape: BoxShape.circle,
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Icon(icon, color: Colors.white, size: 20),
             ),
-            padding: const EdgeInsets.all(8),
-            child: Icon(icon, color: Colors.white, size: 20),
           ),
         ),
       ),
@@ -2044,18 +2055,23 @@ class _EpisodesHeader extends StatelessWidget {
   /// Jump-to-episode; null hides the button (short seasons don't need it).
   final VoidCallback? onJump;
 
-  Widget _circle(IconData icon, VoidCallback onTap) => Material(
-    color: AppColors.surface2,
-    shape: const CircleBorder(),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Icon(icon, color: AppColors.textPrimary, size: 20),
-      ),
-    ),
-  );
+  Widget _circle(IconData icon, VoidCallback onTap, {String? semanticLabel}) =>
+      Semantics(
+        button: true,
+        label: semanticLabel,
+        child: Material(
+          color: AppColors.surface2,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(icon, color: AppColors.textPrimary, size: 20),
+            ),
+          ),
+        ),
+      );
 
   Future<void> _openSheet(BuildContext context) async {
     final picked = await showModalBottomSheet<int>(
@@ -2117,15 +2133,24 @@ class _EpisodesHeader extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (onJump != null) ...[
-                _circle(Icons.search_rounded, onJump!),
+                _circle(
+                  Icons.search_rounded,
+                  onJump!,
+                  semanticLabel: 'Find episode',
+                ),
                 const SizedBox(width: 8),
               ],
               _circle(
                 grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
                 onToggleView,
+                semanticLabel: grid ? 'List view' : 'Grid view',
               ),
               const SizedBox(width: 8),
-              _circle(Icons.info_outline_rounded, onInfo),
+              _circle(
+                Icons.info_outline_rounded,
+                onInfo,
+                semanticLabel: 'Episode info',
+              ),
             ],
           ),
         ],
@@ -2699,10 +2724,19 @@ class _EpisodeDownloadIcon extends StatelessWidget {
         size: 24,
       ),
     };
+    final label = switch (status) {
+      DownloadStatus.done => 'Downloaded',
+      DownloadStatus.downloading || DownloadStatus.paused => 'Downloading',
+      DownloadStatus.queued || DownloadStatus.resolving => 'Downloading',
+      DownloadStatus.unsupported => 'Download unsupported',
+      DownloadStatus.failed => 'Retry download',
+      _ => 'Download episode',
+    };
     return IconButton(
       onPressed: onTap,
       visualDensity: VisualDensity.compact,
       splashRadius: 22,
+      tooltip: label,
       icon: child,
     );
   }
@@ -3283,6 +3317,7 @@ class _DownloadSheetState extends State<_DownloadSheet> {
                   color: AppColors.textTertiary,
                   size: 20,
                 ),
+                tooltip: 'Clear',
                 onPressed: () {
                   _searchCtrl.clear();
                   setState(() => _query = '');

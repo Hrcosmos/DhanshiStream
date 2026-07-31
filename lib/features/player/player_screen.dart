@@ -1362,20 +1362,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _dismissUpNext,
-                  child: Container(
-                    height: 38,
-                    width: 38,
-                    decoration: BoxDecoration(
-                      color: AppColors.surface2,
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.white,
-                      size: 20,
+                Semantics(
+                  button: true,
+                  label: 'Dismiss',
+                  child: GestureDetector(
+                    onTap: _dismissUpNext,
+                    child: Container(
+                      height: 38,
+                      width: 38,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface2,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ),
@@ -2282,6 +2286,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           _RoundIconButton(
                             icon: Icons.lock_rounded,
                             onTap: _toggleLock,
+                            semanticLabel: 'Unlock controls',
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -2506,6 +2511,7 @@ class _CastRemotePanelState extends State<_CastRemotePanel> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    tooltip: 'Back',
                     onPressed: widget.onBack,
                   ),
                   const SizedBox(width: 4),
@@ -2608,6 +2614,7 @@ class _CastRemotePanelState extends State<_CastRemotePanel> {
                                     Icons.replay_10,
                                     color: Colors.white,
                                   ),
+                                  tooltip: 'Rewind 10 seconds',
                                   onPressed: () {
                                     final target =
                                         castCtrl.position -
@@ -2628,6 +2635,7 @@ class _CastRemotePanelState extends State<_CastRemotePanel> {
                                         : Icons.play_circle_filled,
                                     color: Colors.white,
                                   ),
+                                  tooltip: isPlaying ? 'Pause' : 'Play',
                                   onPressed: () => isPlaying
                                       ? castCtrl.pause()
                                       : castCtrl.play(),
@@ -2639,6 +2647,7 @@ class _CastRemotePanelState extends State<_CastRemotePanel> {
                                     Icons.forward_10,
                                     color: Colors.white,
                                   ),
+                                  tooltip: 'Forward 10 seconds',
                                   onPressed: () {
                                     final dur = castCtrl.duration;
                                     final target =
@@ -3277,6 +3286,7 @@ class _ControlsOverlay extends StatelessWidget {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                    tooltip: 'Back',
                     onPressed: onBack,
                   ),
                   Expanded(
@@ -3338,6 +3348,7 @@ class _ControlsOverlay extends StatelessWidget {
                                 : Icons.cast,
                             color: Colors.white,
                           ),
+                          tooltip: 'Cast',
                           onPressed: () => castCtrl.pickDevice(),
                         );
                       },
@@ -3349,6 +3360,7 @@ class _ControlsOverlay extends StatelessWidget {
                         Icons.info_outline_rounded,
                         color: infoOpen ? AppColors.accent : Colors.white,
                       ),
+                      tooltip: 'Playback stats',
                       onPressed: onInfo,
                     ),
                   // Episodes + lock (top-right). PiP/Sleep/Aspect/Snapshot moved
@@ -3359,6 +3371,7 @@ class _ControlsOverlay extends StatelessWidget {
                         Icons.video_library_outlined,
                         color: Colors.white,
                       ),
+                      tooltip: 'Episodes',
                       onPressed: onEpisodes,
                     ),
                   IconButton(
@@ -3366,6 +3379,7 @@ class _ControlsOverlay extends StatelessWidget {
                       Icons.lock_open_rounded,
                       color: Colors.white,
                     ),
+                    tooltip: 'Lock controls',
                     onPressed: onLock,
                   ),
                   if (onChat != null)
@@ -3374,6 +3388,7 @@ class _ControlsOverlay extends StatelessWidget {
                         Icons.chat_bubble_outline_rounded,
                         color: Colors.white,
                       ),
+                      tooltip: 'Chat',
                       onPressed: onChat,
                     ),
                   // ⋮ More — opens the right-slide overflow panel.
@@ -4103,21 +4118,30 @@ class _MegaSkipPill extends StatelessWidget {
 
 // Small circular icon button (used for the unlock control while locked).
 class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({required this.icon, required this.onTap});
+  const _RoundIconButton({
+    required this.icon,
+    required this.onTap,
+    this.semanticLabel,
+  });
   final IconData icon;
   final VoidCallback onTap;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.5),
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Icon(icon, color: Colors.white, size: 24),
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.5),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
         ),
       ),
     );
@@ -4312,6 +4336,7 @@ class _EpisodesPanelState extends State<_EpisodesPanel> {
                           Icons.close_rounded,
                           color: AppColors.textSecondary,
                         ),
+                        tooltip: 'Close',
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
@@ -4885,6 +4910,7 @@ class _OnlineSubtitleSheetState extends State<_OnlineSubtitleSheet> {
                 prefixIcon: const Icon(Icons.search_rounded, size: 20),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_forward_rounded, size: 20),
+                  tooltip: 'Search',
                   onPressed: _search,
                 ),
               ),
@@ -5503,25 +5529,29 @@ class _AnimatedPlayPause extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.72, end: 1).animate(anim),
-              child: child,
+    return Semantics(
+      button: true,
+      label: playing ? 'Pause' : 'Play',
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.72, end: 1).animate(anim),
+                child: child,
+              ),
             ),
-          ),
-          child: Icon(
-            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            key: ValueKey<bool>(playing),
-            color: Colors.white,
-            size: 58,
+            child: Icon(
+              playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              key: ValueKey<bool>(playing),
+              color: Colors.white,
+              size: 58,
+            ),
           ),
         ),
       ),
@@ -5569,14 +5599,18 @@ class _SeekButtonState extends State<_SeekButton>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: _tap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: RotationTransition(
-          turns: _turn,
-          child: Icon(widget.icon, color: Colors.white, size: 34),
+    return Semantics(
+      button: true,
+      label: widget.forward ? 'Forward 10 seconds' : 'Rewind 10 seconds',
+      child: GestureDetector(
+        onTap: _tap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: RotationTransition(
+            turns: _turn,
+            child: Icon(widget.icon, color: Colors.white, size: 34),
+          ),
         ),
       ),
     );
@@ -6064,7 +6098,11 @@ class _DelayAdjusterState extends State<_DelayAdjuster> {
                   style: AppText.body.copyWith(color: AppColors.textPrimary),
                 ),
               ),
-              _stepBtn(Icons.remove_rounded, () => _bump(-_step)),
+              _stepBtn(
+                Icons.remove_rounded,
+                () => _bump(-_step),
+                semanticLabel: 'Decrease ${widget.label.toLowerCase()}',
+              ),
               SizedBox(
                 width: 72,
                 child: Text(
@@ -6076,7 +6114,11 @@ class _DelayAdjusterState extends State<_DelayAdjuster> {
                   ),
                 ),
               ),
-              _stepBtn(Icons.add_rounded, () => _bump(_step)),
+              _stepBtn(
+                Icons.add_rounded,
+                () => _bump(_step),
+                semanticLabel: 'Increase ${widget.label.toLowerCase()}',
+              ),
               IconButton(
                 tooltip: 'Reset',
                 icon: const Icon(
@@ -6214,15 +6256,23 @@ class _DelayAdjusterState extends State<_DelayAdjuster> {
     );
   }
 
-  Widget _stepBtn(IconData icon, VoidCallback onTap) => Material(
-    color: AppColors.surface2,
-    shape: const CircleBorder(),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(icon, color: AppColors.textPrimary, size: 20),
+  Widget _stepBtn(
+    IconData icon,
+    VoidCallback onTap, {
+    String? semanticLabel,
+  }) => Semantics(
+    button: true,
+    label: semanticLabel,
+    child: Material(
+      color: AppColors.surface2,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, color: AppColors.textPrimary, size: 20),
+        ),
       ),
     ),
   );

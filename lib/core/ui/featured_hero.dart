@@ -308,12 +308,19 @@ class _FeaturedHeroState extends State<FeaturedHero> {
                             : Icons.add_rounded,
                         widget.onToggleList,
                         active: widget.inList,
+                        semanticLabel: widget.inList
+                            ? 'Remove from My List'
+                            : 'Add to My List',
                       ),
                       widget.onToggleList,
                     ),
                     const SizedBox(width: 10),
                     _wrap(
-                      _circleBtn(Icons.info_outline_rounded, widget.onInfo),
+                      _circleBtn(
+                        Icons.info_outline_rounded,
+                        widget.onInfo,
+                        semanticLabel: 'Details',
+                      ),
                       widget.onInfo,
                     ),
                   ],
@@ -406,22 +413,31 @@ class _FeaturedHeroState extends State<FeaturedHero> {
   }
 
   /// Inline glass circular action (My List / Info) sitting next to Play.
-  Widget _circleBtn(IconData icon, VoidCallback onTap, {bool active = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.14),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-        ),
-        child: Icon(
-          icon,
-          color: active ? AppColors.accent : Colors.white,
-          size: 21,
+  Widget _circleBtn(
+    IconData icon,
+    VoidCallback onTap, {
+    bool active = false,
+    String? semanticLabel,
+  }) {
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+          ),
+          child: Icon(
+            icon,
+            color: active ? AppColors.accent : Colors.white,
+            size: 21,
+          ),
         ),
       ),
     );

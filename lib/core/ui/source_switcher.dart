@@ -492,6 +492,7 @@ class _PickerSearchField extends StatelessWidget {
             : IconButton(
                 icon: const Icon(Icons.close,
                     color: AppColors.textSecondary, size: 18),
+                tooltip: 'Clear',
                 onPressed: () {
                   controller.clear();
                   onChanged('');
