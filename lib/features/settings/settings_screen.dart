@@ -1205,6 +1205,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
   }) {
     return showModalBottomSheet<T>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -1230,21 +1231,36 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
               ),
             ),
             const Divider(color: AppColors.hairline, height: 1),
-            ...options.map((opt) {
-              final (value, label) = opt;
-              final isSelected = value == current;
-              return ListTile(
-                onTap: () => Navigator.pop(ctx, value),
-                title: Text(
-                  label,
-                  style: AppText.body.copyWith(color: AppColors.textPrimary),
+            // Scroll a long option list (e.g. the ~25-language "Translate to"
+            // picker) instead of overflowing the sheet. Short lists
+            // (quality/decoder) stay shorter than the cap, so shrinkWrap sizes
+            // them to their content and they look unchanged.
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.6,
                 ),
-                trailing: isSelected
-                    ? Icon(Icons.check, color: AppColors.accent)
-                    : null,
-              );
-            }),
-            const SizedBox(height: 8),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    for (final (value, label) in options)
+                      ListTile(
+                        onTap: () => Navigator.pop(ctx, value),
+                        title: Text(
+                          label,
+                          style: AppText.body.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        trailing: value == current
+                            ? Icon(Icons.check, color: AppColors.accent)
+                            : null,
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

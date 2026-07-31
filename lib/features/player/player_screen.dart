@@ -5836,7 +5836,18 @@ class _SheetColumn extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
           child: Text(header, style: AppText.headline),
         ),
-        Flexible(child: ListView(shrinkWrap: true, children: children)),
+        // Cap the list height so a long sheet (e.g. the ~25-language translate
+        // list) scrolls instead of overflowing and clipping at whatever fits.
+        // Short sheets are shorter than the cap, so shrinkWrap still sizes them
+        // to their content and they look/behave exactly as before.
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6,
+            ),
+            child: ListView(shrinkWrap: true, children: children),
+          ),
+        ),
       ],
     );
   }
