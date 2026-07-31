@@ -61,7 +61,7 @@ const List<_RailItem> _kRailItems = [
   _RailItem(label: 'Settings', icon: Icons.settings_outlined, selectedIcon: Icons.settings),
 ];
 
-class _RootShellTvState extends State<RootShellTv> {
+class _RootShellTvState extends State<RootShellTv> with WidgetsBindingObserver {
   static const int _searchRailItem = 1;
 
   int _index = 0;
@@ -83,11 +83,63 @@ class _RootShellTvState extends State<RootShellTv> {
   @override
   void initState() {
     super.initState();
-    // Guarantee a visible cursor on the empty/no-provider Home where the content
-    // zone has no focusable leaf — otherwise autofocus can settle on the bare
-    // scope node, which renders nothing. Only acts when nothing real is focused.
+    WidgetsBinding.instance.addObserver(this);
+    _recoverFocusIfNeeded();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The default TV player (nativeTvPlayer) is a SEPARATE Android Activity, so
+    // closing it resumes us. Focus can come back stuck in the rail or on a stray
+    // node — the shell's custom LEFT-open / RIGHT-exit key bridges are dead until
+    // a restart. Pull focus back to content on resume to recover without one.
+    if (state != AppLifecycleState.resumed) return;
+    _resumeReseed(0);
+  }
+
+  /// After the native player Activity resumes, the shell's custom key bridges go
+  /// dead (plain up/down traversal still works, but LEFT-open / RIGHT-exit
+  /// don't) — focus comes back on a node that isn't wired to the live scope
+  /// handlers. Different TVs park it differently: standard Android TV (Xiaomi)
+  /// leaves it in the rail; Fire TV leaves it on a STALE content node — that
+  /// reports `_contentScope.hasFocus == true`, yet the node is no longer in the
+  /// live tree so its key chain (incl. _onContentKey) is dead. So "content has
+  /// focus" is NOT proof the bridge works.
+  ///
+  /// The reliable test is whether the focused node is an actual LIVE content
+  /// leaf (present in the current traversal set). If it is, its chain includes
+  /// _onContentKey and we leave it alone (no cursor jump). Otherwise — rail,
+  /// stray node, or stale content node — request a fresh content leaf, which
+  /// rebinds a live _onContentKey (from which LEFT opens the rail again) and
+  /// closes any stuck-open drawer. Retries a few frames while Home rebuilds
+  /// after playback (its leaves may not exist yet).
+  void _resumeReseed(int attempt) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || attempt > 8) return;
+      if (ModalRoute.of(context)?.isCurrent == false) return;
+      final leaves = _contentScope.traversalDescendants
+          .where((n) => n.canRequestFocus)
+          .toList();
+      if (leaves.isEmpty) {
+        _resumeReseed(attempt + 1); // content still rebuilding — try next frame
+        return;
+      }
+      // Healthy iff focus is on a LIVE content leaf — leave it (avoids a jump).
+      final pf = FocusManager.instance.primaryFocus;
+      if (pf != null && leaves.contains(pf)) return;
+      leaves.first.requestFocus();
+    });
+  }
+
+  /// Re-seed a sane focus target when the shell is (re)shown and nothing real
+  /// holds focus. Guards the empty/no-provider Home at startup (a bare scope
+  /// node renders no cursor) AND recovers after returning from the native
+  /// player. Only acts when this shell is the visible route, so it never steals
+  /// focus from a pushed Detail screen or dialog.
+  void _recoverFocusIfNeeded() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (ModalRoute.of(context)?.isCurrent == false) return;
       final primary = FocusManager.instance.primaryFocus;
       if (primary == null || primary is FocusScopeNode) {
         _railScope.traversalDescendants
@@ -120,6 +172,29 @@ class _RootShellTvState extends State<RootShellTv> {
     return KeyEventResult.ignored;
   }
 
+  /// Move focus into the rail so the drawer expands (its onFocusChange drives
+  /// [_navOpen]). A single requestFocus can silently no-op after the shell was
+  /// covered by the player/detail route and revealed — the rail scope comes back
+  /// stale — so if focus didn't cross in, retry next frame by seeding from the
+  /// rail's focusable descendants (the same recovery [_recoverFocusIfNeeded]
+  /// uses), which reliably takes. The normal case hits the fast path and the
+  /// post-frame check early-returns, so behaviour is unchanged when it works.
+  void _openRail() {
+    final node = _navNodes[_index];
+    if (node.canRequestFocus) {
+      node.requestFocus();
+    } else {
+      _railScope.requestFocus();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _railScope.hasFocus) return;
+      _railScope.traversalDescendants
+          .where((n) => n.canRequestFocus)
+          .firstOrNull
+          ?.requestFocus();
+    });
+  }
+
   KeyEventResult _onContentKey(FocusNode _, KeyEvent event) {
     if (MediaQuery.maybeOf(context)?.accessibleNavigation ?? false) {
       // Screen reader is on — let TalkBack own D-pad traversal instead of us
@@ -133,14 +208,7 @@ class _RootShellTvState extends State<RootShellTv> {
           false;
       // At the left edge → open the rail on the CURRENT page's item so it's
       // clear which screen you're on.
-      if (!moved) {
-        final node = _navNodes[_index];
-        if (node.canRequestFocus) {
-          node.requestFocus();
-        } else {
-          _railScope.requestFocus();
-        }
-      }
+      if (!moved) _openRail();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -148,6 +216,7 @@ class _RootShellTvState extends State<RootShellTv> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchFocusSignal.dispose();
     _railScope.dispose();
     _contentScope.dispose();
