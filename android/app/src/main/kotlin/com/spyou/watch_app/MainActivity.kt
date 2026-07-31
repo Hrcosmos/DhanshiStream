@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.speech.RecognizerIntent
 import android.util.Log
 import android.util.Rational
 import androidx.work.Constraints
@@ -56,6 +57,7 @@ class MainActivity : FlutterActivity() {
         private const val TAG = "SeekPreview"
         private const val EXT_PLAYER_REQUEST = 7001
         private const val TV_PLAYER_REQUEST = 7002
+        private const val VOICE_SEARCH_REQUEST = 7003
         // Bidirectional bridge to the native TV player: TvPlayerActivity invokes
         // resolveEpisode / saveProgress on Dart through this. Same process + a
         // live FlutterEngine (MainActivity is only paused while the player is up),
@@ -105,6 +107,9 @@ class MainActivity : FlutterActivity() {
     // In-flight native TV-player launch, completed in onActivityResult with the
     // final position so Dart saves resume + Continue Watching.
     private var pendingTvResult: MethodChannel.Result? = null
+    // In-flight TV voice-search dialog, completed in onActivityResult with the
+    // recognised phrase (TV search fills the field + runs the query with it).
+    private var pendingVoiceResult: MethodChannel.Result? = null
 
     // Cached retriever so rapid scrubbing on one title doesn't re-open the
     // source for every frame (setDataSource is expensive, esp. over network).
@@ -250,6 +255,23 @@ class MainActivity : FlutterActivity() {
                         }
                         result.success(true)
                     }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Voice search (TV): open the system speech dialog and hand the
+        // recognised phrase back to Dart. Uses ACTION_RECOGNIZE_SPEECH so no
+        // RECORD_AUDIO permission is needed — the recogniser records in its own
+        // process. isAvailable gates the mic button so it never shows on a box
+        // without a recogniser.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "zangetsu/voice_search")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isAvailable" -> {
+                        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                        result.success(i.resolveActivity(packageManager) != null)
+                    }
+                    "listen" -> startVoiceSearch(call.argument<String>("prompt"), result)
                     else -> result.notImplemented()
                 }
             }
@@ -1013,6 +1035,32 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // Launch the system voice-recognition dialog for TV search. The result
+    // (recognised phrase, or null on cancel/none) comes back in onActivityResult.
+    private fun startVoiceSearch(prompt: String?, result: MethodChannel.Result) {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                )
+                putExtra(RecognizerIntent.EXTRA_PROMPT, prompt ?: "Speak the title")
+            }
+            if (intent.resolveActivity(packageManager) == null) {
+                result.success(null)
+                return
+            }
+            // Complete any stale pending dialog defensively, then wait for this one.
+            pendingVoiceResult?.let { try { it.success(null) } catch (_: Exception) {} }
+            pendingVoiceResult = result
+            startActivityForResult(intent, VOICE_SEARCH_REQUEST)
+        } catch (e: Exception) {
+            Log.w(TAG, "startVoiceSearch failed: ${e.message}")
+            pendingVoiceResult = null
+            result.success(null)
+        }
+    }
+
     // Reads a position/duration extra whether the player stored it as Long or Int.
     private fun longExtra(data: Intent, vararg keys: String): Long {
         for (k in keys) {
@@ -1042,6 +1090,13 @@ class MainActivity : FlutterActivity() {
                 } catch (_: Exception) {}
             }
             pendingTvResult = null
+            return
+        }
+        if (requestCode == VOICE_SEARCH_REQUEST) {
+            val text = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            pendingVoiceResult?.let { try { it.success(text) } catch (_: Exception) {} }
+            pendingVoiceResult = null
             return
         }
         if (requestCode != EXT_PLAYER_REQUEST) return

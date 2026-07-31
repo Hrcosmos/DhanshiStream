@@ -41,6 +41,15 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
   /// 6 columns fills a 1920-wide TV at ~140 dp card width with comfortable gaps.
   static const int _crossAxisCount = 6;
 
+  /// Native voice-search bridge (system RecognizerIntent; no plugin, no mic
+  /// permission — the system dialog does the recording).
+  static const _voiceChannel = MethodChannel('zangetsu/voice_search');
+
+  /// Only show the mic when the device actually has a speech recognizer.
+  /// Stays false on any error and on non-Android, so the mic simply never
+  /// appears there — the screen is unchanged.
+  bool _voiceAvailable = false;
+
   late final TextEditingController _controller;
   // DOWN from the field must LEAVE it (which closes the TV keyboard) and drop
   // onto the first suggestion/result. Without this the keyboard trapped focus
@@ -66,6 +75,35 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialQuery ?? '');
+    _checkVoice();
+  }
+
+  Future<void> _checkVoice() async {
+    try {
+      final ok = await _voiceChannel.invokeMethod<bool>('isAvailable') ?? false;
+      if (mounted && ok) setState(() => _voiceAvailable = true);
+    } catch (_) {
+      // No native handler / not Android → leave the mic hidden.
+    }
+  }
+
+  /// Open the system voice dialog; on a recognised phrase, fill the field and
+  /// run the search (same path as pressing OK on the keyboard).
+  Future<void> _startVoice() async {
+    try {
+      final text = await _voiceChannel.invokeMethod<String>(
+        'listen',
+        {'prompt': 'Speak the title'},
+      );
+      if (!mounted || text == null || text.isEmpty) return;
+      _controller.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      context.read<SearchBloc>().add(SearchRunRequested(text));
+    } catch (_) {
+      // Recogniser cancelled / unavailable — nothing to do.
+    }
   }
 
   @override
@@ -161,6 +199,29 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                       ),
                     ),
                   ),
+                  // Voice search — D-pad RIGHT from the field reaches it. Only
+                  // rendered when the device has a recogniser (see _checkVoice).
+                  if (_voiceAvailable) ...[
+                    const SizedBox(width: 12),
+                    TvFocusable(
+                      variant: TvFocusVariant.float,
+                      scale: 1.08,
+                      onTap: _startVoice,
+                      semanticLabel: 'Voice search',
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface2,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.mic_none_rounded,
+                          size: 26,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -266,7 +327,12 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
                         message: 'Search failed — try again',
                       );
                     case SearchStatus.success:
-                      return _resultsGrid(state);
+                      // Current source = one source → flat grid (best overview
+                      // of a single source). All sources = CloudStream-style
+                      // source-grouped horizontal rows.
+                      return state.currentSourceOnly
+                          ? _resultsGrid(state)
+                          : _resultsRows(state);
                   }
                 },
               ),
@@ -288,32 +354,7 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
   /// to what the phone's flat-grid path uses.
   Widget _resultsGrid(SearchState state) {
     final items = state.visibleResults;
-    if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.search_off_rounded,
-              size: 52,
-              color: AppColors.textTertiary,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'No results for "${state.query}"',
-              textAlign: TextAlign.center,
-              style: AppText.headline,
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Check the spelling or try a different title.',
-              textAlign: TextAlign.center,
-              style: AppText.body,
-            ),
-          ],
-        ),
-      );
-    }
+    if (items.isEmpty) return _noResults(state);
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(40, 0, 40, 40),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -334,6 +375,97 @@ class _SearchScreenTvState extends State<SearchScreenTv> {
           headers: item.coverHeaders,
           tags: _tagsFor(item),
           onTap: () => _openDetail(item),
+        );
+      },
+    );
+  }
+
+  /// Shared "nothing matched" panel — used by both the flat grid (current
+  /// source) and the grouped rows (all sources).
+  Widget _noResults(SearchState state) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.search_off_rounded,
+            size: 52,
+            color: AppColors.textTertiary,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'No results for "${state.query}"',
+            textAlign: TextAlign.center,
+            style: AppText.headline,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Check the spelling or try a different title.',
+            textAlign: TextAlign.center,
+            style: AppText.body,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Grouped rows (all-sources) ────────────────────────────────────────────────
+
+  /// CloudStream-style source-grouped results: one horizontal row per source
+  /// (header = source name + count), stacked vertically in arrival order. D-pad
+  /// UP/DOWN moves between sources, LEFT/RIGHT within a source — the same feel as
+  /// the TV Home rows. Only used for the "All sources" scope; a single source
+  /// still renders as the flat [_resultsGrid].
+  Widget _resultsRows(SearchState state) {
+    final groups = state.sortedVisibleGroups;
+    if (groups.isEmpty) return _noResults(state);
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 40),
+      itemCount: groups.length,
+      itemBuilder: (context, gi) {
+        final g = groups[gi];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(48, 18, 48, 10),
+              child: Text(
+                '${g.sourceName}  ·  ${g.items.length}',
+                style: AppText.headline,
+              ),
+            ),
+            SizedBox(
+              // Poster (130 × 195 at 2:3) + title + focus-scale headroom.
+              height: 250,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                // Don't clip the focused card's scale-up + glow.
+                clipBehavior: Clip.none,
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                itemCount: g.items.length,
+                itemBuilder: (context, i) {
+                  final item = g.items[i];
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: SizedBox(
+                      width: 130,
+                      // First tile of the first row gets autofocus so D-pad DOWN
+                      // from the field/suggestions lands on a result.
+                      child: TvPosterTile(
+                        autofocus: gi == 0 && i == 0,
+                        title: item.title,
+                        imageUrl: item.cover,
+                        headers: item.coverHeaders,
+                        tags: _tagsFor(item),
+                        onTap: () => _openDetail(item),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
