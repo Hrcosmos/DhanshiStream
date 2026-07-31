@@ -1073,7 +1073,13 @@ class _SearchViewState extends State<_SearchView> {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            cacheExtent: 600,
+            // With a screen reader on, build every poster (not just the lazy
+            // window) so TalkBack can reach each one and the row auto-scrolls to
+            // it — otherwise swipe navigation stalls at the first few. Sighted
+            // users keep the lazy 600px window unchanged.
+            cacheExtent: MediaQuery.of(context).accessibleNavigation
+                ? double.infinity
+                : 600,
             itemCount: preview.length,
             itemBuilder: (context, i) {
               final item = preview[i];

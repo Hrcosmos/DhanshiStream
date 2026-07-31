@@ -40,7 +40,13 @@ class ContentRow extends StatelessWidget {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            cacheExtent: 600,
+            // With a screen reader on, build every item (not just the lazy
+            // window) so TalkBack can focus each one and the row auto-scrolls to
+            // it — otherwise horizontal swipe navigation stalls at the first few.
+            // Sighted users keep the lazy 600px window unchanged.
+            cacheExtent: MediaQuery.of(context).accessibleNavigation
+                ? double.infinity
+                : 600,
             itemCount: itemCount,
             itemBuilder: (context, index) => Padding(
               padding: const EdgeInsets.only(right: 12),
