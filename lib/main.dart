@@ -66,15 +66,31 @@ Future<void> main() async {
     // Firebase Analytics. Guarded so a build without google-services.json (or a
     // device without Play Services) still boots — analytics just stays off.
     try {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp().timeout(const Duration(seconds: 8));
       Analytics.enabled = true;
     } catch (e, st) {
       AppLogger.instance.logError(e, st);
     }
-    await Supabase.initialize(
-      url: Environment.supabaseUrl,
-      anonKey: Environment.supabaseAnonKey,
-    );
+    // Bounded + guarded like Firebase/MediaKit: on a dead/slow network the
+    // session-restore inside initialize can HANG (a hang never throws, so a
+    // try/catch alone wouldn't save us), and this runs BEFORE runApp — an
+    // unbounded hang here traps the app on the splash forever. Time it out so
+    // boot always proceeds; cloud features degrade to local-only until the next
+    // launch on a live network (SupabaseService.currentUserId tolerates an
+    // uninitialized client).
+    var supabaseOk = false;
+    try {
+      await Supabase.initialize(
+        url: Environment.supabaseUrl,
+        anonKey: Environment.supabaseAnonKey,
+      ).timeout(const Duration(seconds: 8));
+      supabaseOk = true;
+    } catch (e, st) {
+      AppLogger.instance.logError(e, st);
+    }
+    // Boot init failed (dead/slow network) → keep retrying in the background so
+    // login + cloud sync self-heal when the network returns, no restart needed.
+    if (!supabaseOk) unawaited(_retrySupabaseInit());
     // The media_kit mpv fork's native init throws on some old Android 8 / Fire TV
     // devices (its newer native libs don't load there). Uncaught, that throw
     // skips runApp below and the whole app black-screens with no widget tree —
@@ -91,6 +107,44 @@ Future<void> main() async {
   }, (error, stack) {
     AppLogger.instance.logError(error, stack);
   });
+}
+
+/// True once Supabase.initialize has set up its singleton. Accessing
+/// Supabase.instance asserts when init never ran, so probe it via try/catch.
+bool _supabaseReady() {
+  try {
+    Supabase.instance;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// After a boot-time Supabase init failure (dead/slow network), keep retrying in
+/// the background. Once it comes up, re-run the auth restore so a logged-in
+/// user's login + cloud sync reappear WITHOUT an app restart (AuthCubit only
+/// restores once, at boot). Fire-and-forget and bounded — gives up quietly if
+/// the network stays down (next launch will try again).
+Future<void> _retrySupabaseInit() async {
+  for (var attempt = 0; attempt < 15; attempt++) {
+    await Future.delayed(const Duration(seconds: 15));
+    if (_supabaseReady()) break; // a prior attempt already set the client
+    try {
+      await Supabase.initialize(
+        url: Environment.supabaseUrl,
+        anonKey: Environment.supabaseAnonKey,
+      ).timeout(const Duration(seconds: 8));
+      break; // initialized
+    } catch (_) {
+      // still down — try again next loop
+    }
+  }
+  // Client is up now → refresh auth so the UI reflects the restored session.
+  if (_supabaseReady() && sl.isRegistered<AuthCubit>()) {
+    try {
+      await sl<AuthCubit>().restore();
+    } catch (_) {}
+  }
 }
 
 /// Boots the app: runs [initDependencies] behind a splash, then builds the
