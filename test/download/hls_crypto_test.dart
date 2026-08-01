@@ -22,6 +22,16 @@ Uint8List _encrypt(Uint8List plain, Uint8List key, Uint8List iv) {
   return out;
 }
 
+/// A run of [packets] valid 188-byte MPEG-TS packets (0x47 sync at each
+/// boundary, 0x11 filler elsewhere so nothing else aligns).
+Uint8List _ts(int packets) {
+  final b = Uint8List(188 * packets)..fillRange(0, 188 * packets, 0x11);
+  for (var p = 0; p < packets; p++) {
+    b[p * 188] = 0x47;
+  }
+  return b;
+}
+
 void main() {
   final key = Uint8List.fromList(List.generate(16, (i) => i)); // 00..0f
   final iv = Uint8List.fromList(List.generate(16, (i) => 15 - i));
@@ -62,5 +72,31 @@ void main() {
     expect(parsed, equals(Uint8List.fromList(List.generate(16, (i) => i))));
     expect(hlsParseHexIv('0xdead'), isNull); // too short
     expect(hlsParseHexIv('zz0102030405060708090a0b0c0d0e0f'), isNull); // non-hex
+  });
+
+  test('stripToTsSync leaves a clean TS segment unchanged', () {
+    final ts = _ts(4);
+    expect(hlsStripToTsSync(ts), equals(ts));
+  });
+
+  test('stripToTsSync drops a decoy prefix before the TS start', () {
+    // 1×1-PNG-ish + "Service"-ish junk (contains a stray 0x47 that must NOT
+    // trigger a false match because it doesn't repeat at +188/+376).
+    final junk = Uint8List.fromList(
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x53],
+    );
+    final ts = _ts(4);
+    final wrapped = Uint8List.fromList([...junk, ...ts]);
+    expect(hlsStripToTsSync(wrapped), equals(ts));
+  });
+
+  test('stripToTsSync returns short input untouched', () {
+    final short = Uint8List.fromList([0x47, 1, 2]);
+    expect(hlsStripToTsSync(short), equals(short));
+  });
+
+  test('stripToTsSync leaves non-TS data (no aligned sync) alone', () {
+    final noise = Uint8List(800); // no 0x47 anywhere
+    expect(hlsStripToTsSync(noise), equals(noise));
   });
 }

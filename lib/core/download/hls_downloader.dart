@@ -23,9 +23,11 @@ class HlsDownloader {
   static const int _concurrency = 4; // parallel segment fetches
   static const int _maxAhead = 32; // cap out-of-order buffer (memory bound)
 
-  /// Returns true on success (file written to [outputPath]). On failure or
-  /// cancellation the partial file is removed and false is returned.
-  Future<bool> download({
+  /// Returns null on success (file written to [outputPath]). On failure or
+  /// cancellation the partial file is removed and a short reason string is
+  /// returned — surfaced on the download tile and logged by the manager, so a
+  /// failed HLS download is no longer a silent black box.
+  Future<String?> download({
     required String url,
     required Map<String, String> headers,
     required String outputPath,
@@ -38,19 +40,19 @@ class HlsDownloader {
     final concurrency = (connections ?? _concurrency).clamp(1, _concurrency * 4);
     // 1. Resolve a master playlist down to a media (segment) playlist.
     final media = await _resolveMediaPlaylist(url, headers, preferredQuality);
-    if (media == null) return false;
+    if (media == null) return 'playlist unreachable';
     final mediaUrl = media.$1;
     final playlist = media.$2;
 
     // 2. Parse segments + (optional) AES-128 key reference.
     final pl = _parseMedia(playlist, mediaUrl);
-    if (pl.segments.isEmpty) return false;
+    if (pl.segments.isEmpty) return 'empty playlist (no segments)';
 
     // 3. Fetch the decryption key if the stream is encrypted.
     Uint8List? key;
     if (pl.keyUrl != null) {
       key = await _fetchBytes(pl.keyUrl!, headers);
-      if (key == null || key.length != 16) return false; // need a 16-byte key
+      if (key == null || key.length != 16) return 'AES key fetch failed';
     }
 
     // 4. Download segments with bounded parallelism, writing strictly in order.
@@ -63,6 +65,7 @@ class HlsDownloader {
     var nextWrite = 0;
     var done = 0;
     var failed = false;
+    String? failReason;
 
     Future<void> worker() async {
       while (true) {
@@ -78,12 +81,16 @@ class HlsDownloader {
         Uint8List? bytes = await _fetchBytes(pl.segments[i], headers);
         if (bytes == null) {
           failed = true;
+          failReason ??= 'segment ${i + 1}/$total unreachable';
           return;
         }
         if (key != null) {
           final iv = pl.explicitIv ?? hlsSeqIv(pl.mediaSequence + i);
           bytes = hlsAesCbcDecrypt(bytes, key, iv);
         }
+        // TS segments only (fMP4 has an init header and no 0x47 sync): drop any
+        // decoy prefix so the saved file is clean TS external players can demux.
+        if (pl.initUrl == null) bytes = hlsStripToTsSync(bytes);
         pending[i] = bytes;
         // Flush every now-contiguous segment (sync, no await → no interleave).
         while (pending.containsKey(nextWrite)) {
@@ -106,7 +113,7 @@ class HlsDownloader {
         try {
           if (await file.exists()) await file.delete();
         } catch (_) {}
-        return false;
+        return 'init segment fetch failed';
       }
       sink.add(init);
     }
@@ -119,9 +126,10 @@ class HlsDownloader {
       try {
         if (await file.exists()) await file.delete();
       } catch (_) {}
-      return false;
+      if (canceled()) return 'canceled';
+      return failReason ?? 'incomplete ($nextWrite/$total segments)';
     }
-    return true;
+    return null;
   }
 
   // ── Playlist resolution ───────────────────────────────────────────────────
@@ -285,6 +293,30 @@ Uint8List hlsSeqIv(int seq) {
     v >>= 8;
   }
   return iv;
+}
+
+/// Strip a decoy/junk prefix that some anti-scrape CDNs prepend to each TS
+/// segment (e.g. a 1×1 PNG + "Service01" marker sitting before the real
+/// stream). MPEG-TS is 188-byte packets each starting with sync byte 0x47;
+/// find the first offset that is 0x47 AND is 0x47 again one and two packets
+/// later — a real packet boundary, not a stray match — and return the bytes
+/// from there. A clean segment already starts at a valid boundary, so this
+/// returns it UNCHANGED (offset 0); when no aligned sync is found within a
+/// small window (non-TS data, or an unusually large prefix) it also returns the
+/// input untouched, so it can never corrupt a normal download.
+Uint8List hlsStripToTsSync(Uint8List seg) {
+  const ts = 188;
+  if (seg.length < ts * 3) return seg; // too short to validate — leave alone
+  // A real decoy prefix is tiny (tens/hundreds of bytes). Bound the scan so we
+  // find it near the start and never match a coincidental 0x47 deep in payload.
+  final maxStart = seg.length - ts * 2;
+  final scanEnd = maxStart < 4096 ? maxStart : 4096;
+  for (var i = 0; i < scanEnd; i++) {
+    if (seg[i] == 0x47 && seg[i + ts] == 0x47 && seg[i + ts * 2] == 0x47) {
+      return i == 0 ? seg : Uint8List.sublistView(seg, i);
+    }
+  }
+  return seg; // no aligned TS sync near the start — don't touch it
 }
 
 /// Parse an `IV=0x...` hex string into 16 bytes; null if malformed.

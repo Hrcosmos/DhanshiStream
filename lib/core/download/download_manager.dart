@@ -94,6 +94,11 @@ class DownloadManager extends ChangeNotifier {
     _mp4Queue.enqueueErrors.listen((task) async {
       final rec = _records[task.taskId];
       if (rec == null || rec.status == DownloadStatus.canceled) return;
+      AppLogger.instance.log(
+        "[download] MP4 couldn't enqueue — ${rec.showTitle} · "
+        '${rec.episodeTitle} [${rec.quality}]',
+        level: 'E',
+      );
       if (await _tryNext(rec)) return;
       _put(rec.copyWith(
         status: DownloadStatus.failed,
@@ -159,10 +164,16 @@ class DownloadManager extends ChangeNotifier {
       if (id == null) return;
       final rec = _records[id];
       if (rec == null || d?['canceled'] == true) return;
-      if (await _tryNext(rec)) return;
+      final err = d?['error'] as String? ?? 'Download failed';
+      AppLogger.instance.log(
+        '[download] HLS failed — ${rec.showTitle} · ${rec.episodeTitle} '
+        '[${rec.quality}]: $err',
+        level: 'E',
+      );
+      if (await _tryNext(rec)) return; // fell back to another mirror
       _put(rec.copyWith(
         status: DownloadStatus.failed,
-        error: () => d?['error'] as String? ?? 'Download failed',
+        error: () => err,
       ));
       notifyListeners();
     });
@@ -222,9 +233,15 @@ class DownloadManager extends ChangeNotifier {
                 filePath: () => m['filePath'] as String?,
               ));
             } else if (status == 'failed') {
+              final err = m['error'] as String? ?? 'Download failed';
+              AppLogger.instance.log(
+                '[download] HLS failed (finished offline) — '
+                '${rec.showTitle} · ${rec.episodeTitle}: $err',
+                level: 'E',
+              );
               _put(rec.copyWith(
                 status: DownloadStatus.failed,
-                error: () => m['error'] as String? ?? 'Download failed',
+                error: () => err,
               ));
             }
           }
@@ -377,6 +394,11 @@ class DownloadManager extends ChangeNotifier {
       if (_isCanceled(rec.id)) return; // canceled while resolving
       final ranked = _ranked(sources, rec.quality);
       if (ranked.isEmpty) {
+        AppLogger.instance.log(
+          '[download] no downloadable source — ${rec.showTitle} · '
+          '${rec.episodeTitle} (${sources.length} source(s), all HLS/unusable)',
+          level: 'E',
+        );
         _put(
           rec.copyWith(
             status: DownloadStatus.unsupported,
@@ -844,6 +866,12 @@ class DownloadManager extends ChangeNotifier {
           _put(rec.copyWith(status: DownloadStatus.canceled));
         case TaskStatus.notFound:
         case TaskStatus.failed:
+          AppLogger.instance.log(
+            '[download] MP4 ${update.status.name} — ${rec.showTitle} · '
+            '${rec.episodeTitle} [${rec.quality}]: '
+            '${update.exception?.description ?? 'no detail'}',
+            level: 'E',
+          );
           if (await _tryNext(rec)) return; // fall through to the next mirror
           _put(
             rec.copyWith(

@@ -103,7 +103,7 @@ void downloadServiceOnStart(ServiceInstance service) async {
     service.invoke('progress', {'id': id, 'progress': 0.0});
 
     var lastPct = -1;
-    final ok = await hls.download(
+    final failReason = await hls.download(
       url: url,
       headers: headers,
       outputPath: outputPath,
@@ -125,9 +125,9 @@ void downloadServiceOnStart(ServiceInstance service) async {
       service.invoke('failed', {'id': id, 'canceled': true});
       return;
     }
-    if (!ok) {
-      await _writeResult(id, status: 'failed', error: 'HLS download failed');
-      service.invoke('failed', {'id': id, 'error': 'HLS download failed'});
+    if (failReason != null) {
+      await _writeResult(id, status: 'failed', error: failReason);
+      service.invoke('failed', {'id': id, 'error': failReason});
       return;
     }
 
