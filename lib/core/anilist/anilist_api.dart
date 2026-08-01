@@ -299,4 +299,78 @@ class AniListApi {
     );
     return (r?['DeleteMediaListEntry'] as Map?)?['deleted'] == true;
   }
+
+  /// The user's list entry for [mediaId] plus the media's episode + next-airing
+  /// meta, for the sync sheet. `mediaListEntry` is null when the title isn't on
+  /// the user's list. Returns null on error. Score is read on the 0–10 scale.
+  Future<Map<String, dynamic>?> mediaEntry(int mediaId) async {
+    final d = await _gql(
+      'query(\$id:Int){ Media(id:\$id){ episodes '
+      'nextAiringEpisode{ episode airingAt } '
+      'mediaListEntry{ status score(format:POINT_10) progress } } }',
+      {'id': mediaId},
+      auth: true,
+    );
+    final m = d?['Media'];
+    if (m is! Map) return null;
+    return Map<String, dynamic>.from(m);
+  }
+
+  /// Write any subset of status/progress/score for [mediaId] in one mutation.
+  /// [scoreRaw] is 0–100 (AniList's internal scale, independent of the user's
+  /// display format). Returns true on success.
+  Future<bool> saveEntry({
+    required int mediaId,
+    String? status,
+    int? progress,
+    int? scoreRaw,
+  }) async {
+    final varDefs = <String>['\$mediaId:Int'];
+    final args = <String>['mediaId:\$mediaId'];
+    final vars = <String, dynamic>{'mediaId': mediaId};
+    if (status != null) {
+      varDefs.add('\$status:MediaListStatus');
+      args.add('status:\$status');
+      vars['status'] = status;
+    }
+    if (progress != null) {
+      varDefs.add('\$progress:Int');
+      args.add('progress:\$progress');
+      vars['progress'] = progress;
+    }
+    if (scoreRaw != null) {
+      varDefs.add('\$scoreRaw:Int');
+      args.add('scoreRaw:\$scoreRaw');
+      vars['scoreRaw'] = scoreRaw;
+    }
+    final d = await _gql(
+      'mutation(${varDefs.join(',')}){'
+      ' SaveMediaListEntry(${args.join(', ')}){ id } }',
+      vars,
+      auth: true,
+    );
+    return d?['SaveMediaListEntry'] is Map;
+  }
+
+  /// Search anime for candidate matches (the match-fixer). Returns up to
+  /// [perPage] raw media maps ({id, idMal, title, coverImage, episodes, format,
+  /// seasonYear}). Unauthenticated; empty on error.
+  Future<List<Map<String, dynamic>>> searchMedia(
+    String query, {
+    int perPage = 12,
+  }) async {
+    final d = await _gql(
+      'query(\$q:String,\$n:Int){ Page(perPage:\$n){ media(search:\$q,type:ANIME){ '
+      'id idMal episodes format seasonYear '
+      'title{ romaji english } coverImage{ medium } } } }',
+      {'q': query, 'n': perPage},
+    );
+    final page = d?['Page'];
+    final media = (page is Map) ? page['media'] : null;
+    if (media is! List) return const [];
+    return [
+      for (final m in media)
+        if (m is Map) Map<String, dynamic>.from(m),
+    ];
+  }
 }

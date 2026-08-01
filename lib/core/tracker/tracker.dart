@@ -20,6 +20,67 @@ class TrackerListItem {
   final double? score; // user score 0–10 (optional, for display)
 }
 
+/// The user's current entry for ONE title, read back from a tracker to fill the
+/// sync sheet. Any field may be null when the tracker doesn't expose it.
+class TrackerEntry {
+  const TrackerEntry({
+    required this.trackerName,
+    this.onList = false,
+    this.status,
+    this.score,
+    this.progress,
+    this.maxEpisodes,
+    this.nextAiringEpisode,
+    this.nextAiringAt,
+  });
+
+  /// Which tracker this came from, e.g. "AniList".
+  final String trackerName;
+
+  /// Whether the title is on the user's list at all.
+  final bool onList;
+
+  final WatchStatus? status;
+
+  /// User score on a 0–10 scale (null/0 = unrated).
+  final double? score;
+
+  /// Episodes watched.
+  final int? progress;
+
+  /// Total episodes (null/0 = unknown or a movie).
+  final int? maxEpisodes;
+
+  /// The next episode to air + when, while the show is still airing.
+  final int? nextAiringEpisode;
+  final DateTime? nextAiringAt;
+}
+
+/// A candidate match from a tracker's search — used by the "fix wrong match"
+/// picker to rebind a show to the correct tracker entry.
+class TrackerSearchResult {
+  const TrackerSearchResult({
+    required this.trackerName,
+    required this.id,
+    required this.title,
+    this.cover,
+    this.subtitle,
+    this.maxEpisodes,
+  });
+
+  final String trackerName;
+
+  /// The tracker-native id, as a string (AniList media id / MAL anime id /
+  /// Simkl id). Persisted as a pinned binding and passed back as `pinnedId`.
+  final String id;
+  final String title;
+  final String? cover;
+
+  /// A short line under the title (format · year), for disambiguation.
+  final String? subtitle;
+  final int? maxEpisodes;
+}
+
 /// A list/progress tracker the app can sync to (AniList, MyAnimeList, Simkl).
 /// All write ops are best-effort and self-gating — a disconnected tracker (or
 /// one with auto-sync off, or a non-applicable content type) simply no-ops.
@@ -83,6 +144,39 @@ abstract interface class Tracker implements Listenable {
   /// include movies/TV). Best-effort: returns `[]` when disconnected or on any
   /// error — never throws. Each item is a metadata stub + its library status.
   Future<List<TrackerListItem>> fetchList();
+
+  /// Read the user's current entry for ONE title — status/score/progress plus
+  /// the title's total episodes and next airing — to populate the sync sheet.
+  /// Best-effort: null when disconnected, unmatched, or on any error. When
+  /// [pinnedId] is supplied (a tracker-native id chosen via the match-fixer) it
+  /// overrides the malId/title/tmdb resolution.
+  Future<TrackerEntry?> fetchEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv,
+    String? imdbId,
+    String? pinnedId,
+  });
+
+  /// Write status/score/progress together for ONE title (the sync sheet's
+  /// Apply). A null field is left unchanged. [score] is 0–10. Best-effort and
+  /// self-gating like every other write.
+  Future<void> updateEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv,
+    String? imdbId,
+    String? pinnedId,
+    WatchStatus? status,
+    double? score,
+    int? progress,
+  });
+
+  /// Search this tracker for candidate matches (the match-fixer). Returns `[]`
+  /// when disconnected, the query is empty, or on any error — never throws.
+  Future<List<TrackerSearchResult>> searchEntries(String query);
 
   /// The full persisted session as a plain JSON-able map, or null if not
   /// connected. Used by the TV relay to move a session between devices.

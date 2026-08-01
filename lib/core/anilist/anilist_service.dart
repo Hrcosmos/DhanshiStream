@@ -411,6 +411,109 @@ class AniListService extends ChangeNotifier implements Tracker {
     await _store.setScrobbledProgress(media.id, 0);
   }
 
+  // ── Single-entry read/write + search (sync sheet + match-fixer) ─────────────
+
+  @override
+  Future<TrackerEntry?> fetchEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+  }) async {
+    if (!isConnected) return null;
+    final mediaId =
+        int.tryParse(pinnedId ?? '') ?? (await _resolveMedia(malId, title))?.id;
+    if (mediaId == null) return null;
+    final m = await _api.mediaEntry(mediaId);
+    if (m == null) return null;
+    final entry = m['mediaListEntry'];
+    final na = m['nextAiringEpisode'];
+    final airAt = (na is Map) ? (na['airingAt'] as num?)?.toInt() : null;
+    final rawScore =
+        (entry is Map) ? (entry['score'] as num?)?.toDouble() : null;
+    return TrackerEntry(
+      trackerName: displayName,
+      onList: entry is Map,
+      status: (entry is Map)
+          ? watchStatusFromAniList(entry['status'] as String?)
+          : null,
+      score: (rawScore == null || rawScore == 0) ? null : rawScore,
+      progress: (entry is Map) ? (entry['progress'] as num?)?.toInt() : null,
+      maxEpisodes: (m['episodes'] as num?)?.toInt(),
+      nextAiringEpisode: (na is Map) ? (na['episode'] as num?)?.toInt() : null,
+      nextAiringAt: airAt == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(airAt * 1000),
+    );
+  }
+
+  @override
+  Future<void> updateEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+    WatchStatus? status,
+    double? score,
+    int? progress,
+  }) async {
+    if (!isConnected) return;
+    final mediaId =
+        int.tryParse(pinnedId ?? '') ?? (await _resolveMedia(malId, title))?.id;
+    if (mediaId == null) return;
+    final ok = await _api.saveEntry(
+      mediaId: mediaId,
+      status: status?.anilist,
+      progress: progress,
+      scoreRaw: score == null ? null : (score * 10).round().clamp(0, 100),
+    );
+    // Keep the scrobbler's high-water mark in step with a manual progress edit,
+    // so auto-scrobble won't later "undo" it or re-push an older episode.
+    if (ok && progress != null) {
+      await _store.setScrobbledProgress(mediaId, progress);
+    }
+  }
+
+  @override
+  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+    if (query.trim().isEmpty) return const [];
+    final results = await _api.searchMedia(query);
+    return [
+      for (final m in results)
+        TrackerSearchResult(
+          trackerName: displayName,
+          id: '${m['id']}',
+          title: _bestTitle(m['title']),
+          cover: (m['coverImage'] is Map)
+              ? (m['coverImage'] as Map)['medium'] as String?
+              : null,
+          subtitle: _searchSubtitle(m),
+          maxEpisodes: (m['episodes'] as num?)?.toInt(),
+        ),
+    ];
+  }
+
+  static String _bestTitle(Object? t) {
+    if (t is! Map) return 'Unknown';
+    final english = t['english'] as String?;
+    final romaji = t['romaji'] as String?;
+    return (english?.isNotEmpty == true) ? english! : (romaji ?? 'Unknown');
+  }
+
+  static String? _searchSubtitle(Map m) {
+    final format = (m['format'] as String?)?.replaceAll('_', ' ');
+    final year = (m['seasonYear'] as num?)?.toInt();
+    final parts = [
+      if (format != null && format.isNotEmpty) format,
+      if (year != null) '$year',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
   // ── Session export/import (TV relay) ────────────────────────────────────
 
   @override

@@ -46,6 +46,7 @@ import '../anilist/anilist_service.dart';
 import '../anilist/anilist_store.dart';
 import '../tracker/mal_service.dart';
 import '../tracker/simkl_service.dart';
+import '../tracker/tracker_binding_store.dart';
 import '../tracker/tracker_hub.dart';
 import '../tracker/relay/tracker_relay.dart';
 import '../app_mode.dart';
@@ -280,6 +281,10 @@ Future<void> initDependencies() async {
   sl.registerSingleton<TrackerHub>(
     TrackerHub([sl<AniListService>(), sl<MalService>(), sl<SimklService>()]),
   );
+  // Manual match corrections (the sync sheet's "Change match"): show → chosen
+  // tracker entry id, persisted so a fixed match sticks.
+  await TrackerBindingStore.init();
+  sl.registerSingleton<TrackerBindingStore>(TrackerBindingStore());
   // TV relay: packs/unpacks tracker sessions to move a login from phone to TV.
   sl.registerLazySingleton<TrackerRelay>(() => TrackerRelay({
         'anilist': sl<AniListService>(),

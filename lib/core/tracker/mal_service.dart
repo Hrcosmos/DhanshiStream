@@ -481,6 +481,122 @@ class MalService extends ChangeNotifier implements Tracker {
     }
   }
 
+  // ── Single-entry read/write + search (sync sheet + match-fixer) ─────────────
+
+  @override
+  Future<TrackerEntry?> fetchEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+  }) async {
+    if (!isConnected) return null;
+    final token = await _validToken();
+    if (token == null) return null;
+    final id =
+        int.tryParse(pinnedId ?? '') ?? (await _resolve(malId, title))?.id;
+    if (id == null) return null;
+    try {
+      final res = await _dio.get<dynamic>(
+        '$_api/anime/$id?fields=num_episodes,my_list_status',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+      final d = res.data;
+      if (d is! Map) return null;
+      final ls = d['my_list_status'] as Map?;
+      final total = (d['num_episodes'] as num?)?.toInt();
+      final score = (ls?['score'] as num?)?.toDouble();
+      return TrackerEntry(
+        trackerName: displayName,
+        onList: ls != null,
+        status: _statusFromMal(ls?['status'] as String?),
+        score: (score == null || score == 0) ? null : score,
+        progress: (ls?['num_episodes_watched'] as num?)?.toInt(),
+        maxEpisodes: (total != null && total > 0) ? total : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> updateEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+    WatchStatus? status,
+    double? score,
+    int? progress,
+  }) async {
+    if (!isConnected) return;
+    final id =
+        int.tryParse(pinnedId ?? '') ?? (await _resolve(malId, title))?.id;
+    if (id == null) return;
+    final fields = <String, dynamic>{};
+    if (status != null) fields['status'] = status.mal;
+    if (progress != null) fields['num_watched_episodes'] = progress;
+    if (score != null) fields['score'] = score.round().clamp(0, 10);
+    if (fields.isEmpty) return;
+    final ok = await _patch(id, fields);
+    if (ok && progress != null) await _setScrobbled(id, progress);
+  }
+
+  @override
+  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+    if (query.trim().isEmpty) return const [];
+    final token = await _validToken();
+    if (token == null) return const [];
+    try {
+      final res = await _dio.get<dynamic>(
+        '$_api/anime?q=${Uri.encodeComponent(query)}&limit=12'
+        '&fields=num_episodes,media_type,start_season,main_picture',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+      final list = (res.data is Map) ? (res.data['data'] as List?) : null;
+      if (list == null) return const [];
+      final out = <TrackerSearchResult>[];
+      for (final e in list) {
+        final node = (e is Map) ? e['node'] as Map? : null;
+        final id = (node?['id'] as num?)?.toInt();
+        if (node == null || id == null) continue;
+        final pic = node['main_picture'] as Map?;
+        final total = (node['num_episodes'] as num?)?.toInt();
+        out.add(TrackerSearchResult(
+          trackerName: displayName,
+          id: '$id',
+          title: '${node['title'] ?? 'Unknown'}',
+          cover: (pic?['medium'] as String?) ?? (pic?['large'] as String?),
+          subtitle: _searchSubtitle(node),
+          maxEpisodes: (total != null && total > 0) ? total : null,
+        ));
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static String? _searchSubtitle(Map node) {
+    final type = (node['media_type'] as String?)?.toUpperCase();
+    final year = ((node['start_season'] as Map?)?['year'] as num?)?.toInt();
+    final parts = [
+      if (type != null && type.isNotEmpty) type,
+      if (year != null) '$year',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
   // ── Session export/import (TV relay) ────────────────────────────────────
 
   @override

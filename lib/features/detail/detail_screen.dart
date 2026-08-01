@@ -34,6 +34,9 @@ import '../../core/playback/filler_service.dart';
 import '../../core/playback/list_status_store.dart';
 import '../../core/playback/my_list.dart';
 import '../../core/ui/list_status_sheet.dart';
+import '../../core/ui/tracker_sync_sheet.dart';
+import '../../core/tracker/tracker_binding_store.dart';
+import '../../core/tracker/tracker_hub.dart';
 import '../../core/playback/playback_prefs.dart';
 import '../../core/playback/resume_store.dart';
 import '../../core/playback/title_prefs.dart';
@@ -332,6 +335,75 @@ class _DetailViewState extends State<_DetailView>
         });
       },
     );
+  }
+
+  // Tracker-driven episode grey-out: the connected tracker's watched-episode
+  // count, fetched once after the detail loads (null until then / no match).
+  int? _trackerProgress;
+  bool _trackerFetchStarted = false;
+
+  /// Fetch the connected tracker's episode progress once, so episodes already
+  /// watched on AniList/MAL/Simkl grey out even if never played in-app.
+  /// Best-effort and additive — a null result changes nothing on screen.
+  void _maybeFetchTrackerProgress(MediaDetail detail) {
+    if (_trackerFetchStarted) return;
+    _trackerFetchStarted = true;
+    final hub = sl<TrackerHub>();
+    if (!hub.anyConnected) return;
+    final isAnime = detail.type == ProviderType.anime;
+    final pins = sl<TrackerBindingStore>()
+        .get(TrackerBindingStore.keyOf(widget.item.sourceId, widget.item.url));
+    hub
+        .fetchEntry(
+          malId: detail.malId ?? widget.item.malId,
+          title: isAnime ? detail.title : null,
+          tmdbId: detail.tmdbId ?? widget.item.tmdbId,
+          tmdbIsTv: detail.tmdbIsTv,
+          imdbId: detail.imdbId ?? widget.item.imdbId,
+          pinnedIds: pins.isEmpty ? null : pins,
+        )
+        .then((e) {
+      final p = e?.progress;
+      if (!mounted || p == null || p <= 0) return;
+      setState(() => _trackerProgress = p);
+    });
+  }
+
+  /// Whether the Tracking button should show for [detail]. Only when a tracker
+  /// is connected AND it can actually track this title: anime → always (AniList/
+  /// MAL/Simkl); movies & live-action TV → only Simkl, and only with a tmdb/imdb
+  /// id to key on. Keeps the button out of the way for everyone else.
+  bool _trackingAvailable(MediaDetail detail) {
+    final hub = sl<TrackerHub>();
+    if (!hub.anyConnected) return false;
+    if (detail.type == ProviderType.anime) return true;
+    final simklOn = hub.connected.any((t) => t.displayName == 'Simkl');
+    final hasId = (detail.tmdbId ?? widget.item.tmdbId) != null ||
+        ((detail.imdbId ?? widget.item.imdbId)?.isNotEmpty ?? false);
+    return simklOn && hasId;
+  }
+
+  /// Open the tracker sync sheet — status, score and episode
+  /// progress in one place, applied to every connected tracker at once. Anime
+  /// resolves by MAL id or title; movies/TV via Simkl's tmdb/imdb id. The sheet
+  /// returns the applied episode progress so grey-out can update immediately.
+  Future<void> _openTrackingSheet(MediaDetail detail) async {
+    final applied = await showTrackerSyncSheet(
+      context,
+      title: detail.title,
+      isAnime: detail.type == ProviderType.anime,
+      malId: detail.malId ?? widget.item.malId,
+      tmdbId: detail.tmdbId ?? widget.item.tmdbId,
+      tmdbIsTv: detail.tmdbIsTv,
+      imdbId: detail.imdbId ?? widget.item.imdbId,
+      bindingKey: TrackerBindingStore.keyOf(
+        widget.item.sourceId,
+        widget.item.url,
+      ),
+    );
+    if (applied != null && mounted && applied > (_trackerProgress ?? 0)) {
+      setState(() => _trackerProgress = applied);
+    }
   }
 
   /// Open a related title. Relations come from a metadata API (not tied to a
@@ -737,6 +809,8 @@ class _DetailViewState extends State<_DetailView>
     final store = sl<ResumeStore>();
     // Kick the (cached, once-per-malId) filler lookup for the "Filler" badge.
     _ensureFiller(detail.malId ?? item.malId);
+    // Kick the (once-per-detail) tracker-progress lookup for grey-out.
+    _maybeFetchTrackerProgress(detail);
 
     // Resume / play button logic. PRESERVED.
     final resumeIdx = _resumeIndex(eps);
@@ -1009,6 +1083,13 @@ class _DetailViewState extends State<_DetailView>
                         : 'Notify on new episodes',
                     onTap: () => _toggleSubscribe(detail),
                   ),
+                if (_trackingAvailable(detail))
+                  _IconAction(
+                    icon: Icons.sync_rounded,
+                    label: 'Tracking',
+                    tooltip: 'Sync status, score & progress',
+                    onTap: () => _openTrackingSheet(detail),
+                  ),
                 _IconAction(
                   icon: Icons.ios_share_rounded,
                   label: 'Share',
@@ -1086,6 +1167,7 @@ class _DetailViewState extends State<_DetailView>
             showUrl: item.url,
             resumeIndex: _resumeIndex,
             hasAnyMark: hasAnyMark,
+            trackerProgress: _trackerProgress,
             onOpen: (fullIndex) =>
                 _openPlayer(eps, fullIndex, detail, category),
             onInfo: () => _tabController.animateTo(3),
@@ -1789,6 +1871,7 @@ class _EpisodesTab extends StatefulWidget {
     required this.showUrl,
     required this.resumeIndex,
     required this.hasAnyMark,
+    this.trackerProgress,
     required this.onOpen,
     required this.onInfo,
     required this.onDownload,
@@ -1808,6 +1891,10 @@ class _EpisodesTab extends StatefulWidget {
   final String showUrl;
   final int Function(List<Episode>) resumeIndex;
   final bool hasAnyMark;
+
+  /// The connected tracker's watched-episode count, or null. Episodes at or
+  /// below it render as watched (grey-out), merged with local playback marks.
+  final int? trackerProgress;
   final void Function(int fullIndex) onOpen;
 
   /// Opens the small circular ⓘ button → jumps to the Details tab.
@@ -1868,7 +1955,15 @@ class _EpisodesTabState extends State<_EpisodesTab> {
     final mark = store.get(widget.sourceId, widget.showUrl, ep.id);
     final inProgress =
         mark != null && !mark.finished && mark.duration > Duration.zero;
-    final watched = mark != null && mark.finished;
+    // Watched = finished locally, OR at/below the tracker's watched count.
+    // Only applied to single-season shows, where episode numbers map cleanly
+    // to the tracker's per-entry progress (avoids mis-greying across seasons).
+    final epNum = ep.number?.toInt();
+    final watched = (mark != null && mark.finished) ||
+        (widget.trackerProgress != null &&
+            !widget.hasMultipleSeasons &&
+            epNum != null &&
+            epNum <= widget.trackerProgress!);
     final resume =
         widget.hasAnyMark && fullIndex == widget.resumeIndex(widget.eps);
     final fraction = inProgress

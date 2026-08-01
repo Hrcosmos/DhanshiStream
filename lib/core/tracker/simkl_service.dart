@@ -377,6 +377,111 @@ class SimklService extends ChangeNotifier implements Tracker {
     }
   }
 
+  // ── Single-entry read/write + search (sync sheet + match-fixer) ─────────────
+
+  @override
+  Future<TrackerEntry?> fetchEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+  }) async {
+    if (!isConnected) return null;
+    // Simkl has no cheap single-item status read, so filter the anime library
+    // (matches by MAL id, or a pinned Simkl id). Movies/TV return null — Simkl
+    // still receives writes on Apply via updateEntry, it just can't prefill.
+    final pinned = int.tryParse(pinnedId ?? '');
+    if (malId == null && pinned == null) return null;
+    final list = await fetchList();
+    for (final it in list) {
+      final matchesMal = malId != null && it.item.malId == malId;
+      final matchesPinned =
+          pinned != null && it.item.id == 'tracker:simkl:$pinned';
+      if (matchesMal || matchesPinned) {
+        return TrackerEntry(
+          trackerName: displayName,
+          onList: true,
+          status: it.status,
+          score: it.score,
+          progress: it.progress,
+        );
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<void> updateEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+    WatchStatus? status,
+    double? score,
+    int? progress,
+  }) async {
+    if (!isConnected) return;
+    final pinned = int.tryParse(pinnedId ?? '');
+    final ({String bucket, Map<String, dynamic> ids})? target = pinned != null
+        ? (bucket: 'shows', ids: <String, dynamic>{'simkl': '$pinned'})
+        : _target(malId, tmdbId, tmdbIsTv, imdbId);
+    if (target == null) return;
+    if (status != null) {
+      await _addToList(target, status.simkl);
+    }
+    if (score != null) {
+      await _post(
+        '/sync/ratings',
+        _body(target, {'ids': target.ids, 'rating': score.round().clamp(1, 10)}),
+      );
+    }
+    if (progress != null && progress > 0) {
+      // Simkl counts distinct watched episodes, so mark 1..N to set progress N.
+      final eps = [for (var n = 1; n <= progress; n++) <String, dynamic>{'number': n}];
+      await _post('/sync/history', _body(target, {'ids': target.ids, 'episodes': eps}));
+    }
+  }
+
+  @override
+  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+    if (query.trim().isEmpty) return const [];
+    try {
+      final res = await _dio.get<dynamic>(
+        '$_api/search/anime?q=${Uri.encodeComponent(query)}&extended=full&limit=12',
+        options: Options(
+          headers: _headers,
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+      final list = res.data;
+      if (list is! List) return const [];
+      final out = <TrackerSearchResult>[];
+      for (final e in list) {
+        if (e is! Map) continue;
+        final ids = (e['ids'] is Map) ? e['ids'] as Map : const {};
+        final simkl = _asInt(ids['simkl']);
+        if (simkl == null) continue;
+        final total = _asInt(e['total_episodes']) ?? _asInt(e['episodes']);
+        final year = _asInt(e['year']);
+        out.add(TrackerSearchResult(
+          trackerName: displayName,
+          id: '$simkl',
+          title: '${e['title'] ?? 'Unknown'}',
+          cover: _posterUrl(e['poster']),
+          subtitle: year == null ? null : '$year',
+          maxEpisodes: (total != null && total > 0) ? total : null,
+        ));
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // ── Session export/import (TV relay) ────────────────────────────────────
 
   @override

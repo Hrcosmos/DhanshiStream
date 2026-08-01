@@ -88,6 +88,84 @@ class TrackerHub {
     ),
   );
 
+  /// Read the user's entry for one title. Queries every connected tracker in
+  /// parallel and returns the FIRST that has the title on the user's list —
+  /// that becomes the sheet's editable state. Falls back
+  /// to the first that returned any data (so total-episodes / next-airing still
+  /// show even when the title isn't on a list yet). Null when nothing matched.
+  /// [pinnedIds] maps a tracker's [Tracker.displayName] to a chosen native id.
+  Future<TrackerEntry?> fetchEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    Map<String, String>? pinnedIds,
+  }) async {
+    final results = await Future.wait(
+      connected.map((t) async {
+        try {
+          return await t.fetchEntry(
+            malId: malId,
+            title: title,
+            tmdbId: tmdbId,
+            tmdbIsTv: tmdbIsTv,
+            imdbId: imdbId,
+            pinnedId: pinnedIds?[t.displayName],
+          );
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+    for (final r in results) {
+      if (r != null && r.onList) return r;
+    }
+    return results.firstWhere((r) => r != null, orElse: () => null);
+  }
+
+  /// Write status/score/progress for one title to EVERY connected tracker at
+  /// once (the sheet's Apply). Not gated by incognito — this is an explicit,
+  /// deliberate edit, not passive auto-tracking.
+  Future<void> updateEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    Map<String, String>? pinnedIds,
+    WatchStatus? status,
+    double? score,
+    int? progress,
+  }) => _fan(
+    (t) => t.updateEntry(
+      malId: malId,
+      title: title,
+      tmdbId: tmdbId,
+      tmdbIsTv: tmdbIsTv,
+      imdbId: imdbId,
+      pinnedId: pinnedIds?[t.displayName],
+      status: status,
+      score: score,
+      progress: progress,
+    ),
+  );
+
+  /// Candidate matches from every connected tracker (the match-fixer), in
+  /// connection order.
+  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+    final lists = await Future.wait(
+      connected.map((t) async {
+        try {
+          return await t.searchEntries(query);
+        } catch (_) {
+          return const <TrackerSearchResult>[];
+        }
+      }),
+    );
+    return [for (final l in lists) ...l];
+  }
+
   Future<void> _fan(Future<void> Function(Tracker) op) async {
     await Future.wait(
       connected.map((t) async {
