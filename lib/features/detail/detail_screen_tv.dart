@@ -176,6 +176,25 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
     return highestMarked;
   }
 
+  /// Resume target for Play (mirrors _DetailViewState._resumeTarget): local
+  /// playback first, else the connected tracker's watched count (single-season).
+  ({int index, bool hasResume}) _resumeTarget(List<Episode> eps) {
+    if (eps.isEmpty) return (index: 0, hasResume: false);
+    final store = sl<ResumeStore>();
+    final hasLocal = eps.any(
+      (e) => store.get(widget.item.sourceId, widget.item.url, e.id) != null,
+    );
+    if (hasLocal) return (index: _resumeIndex(eps), hasResume: true);
+    final p = _trackerProgress;
+    if (p != null && p > 0 && seasonsOf(eps).length <= 1) {
+      for (var j = 0; j < eps.length; j++) {
+        final n = eps[j].number?.toInt();
+        if (n != null && n > p) return (index: j, hasResume: true);
+      }
+    }
+    return (index: 0, hasResume: false);
+  }
+
   // ── Player launch (mirrors _DetailViewState._openPlayer exactly) ──────────
   void _openPlayer(
     List<Episode> episodes,
@@ -538,14 +557,15 @@ class _DetailScreenTvState extends State<DetailScreenTv> {
     _maybeFetchTrackerProgress(detail);
 
     // Resume / play label (mirrors _DetailViewState._buildBody).
-    final resumeIdx = _resumeIndex(eps);
+    final resume = _resumeTarget(eps);
+    final resumeIdx = resume.index;
     final hasAnyMark = eps.any(
       (e) => store.get(item.sourceId, item.url, e.id) != null,
     );
     final episodeNum = eps.isNotEmpty
         ? (eps[resumeIdx].number?.toInt() ?? resumeIdx + 1)
         : 1;
-    final buttonLabel = hasAnyMark ? 'Continue E$episodeNum' : 'Play';
+    final buttonLabel = resume.hasResume ? 'Continue E$episodeNum' : 'Play';
 
     // Cover.
     final coverUrl = detail.cover ?? item.cover ?? '';

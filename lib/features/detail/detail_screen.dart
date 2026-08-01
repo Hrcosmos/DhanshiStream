@@ -618,6 +618,28 @@ class _DetailViewState extends State<_DetailView>
     return highestMarked;
   }
 
+  /// Which episode Play opens, and whether that reads as "Continue". Local
+  /// playback wins when present (unchanged behaviour); with NO local marks it
+  /// falls back to the connected tracker's watched count — resume the first
+  /// episode beyond it — so a title you've only progressed on AniList/MAL/Simkl
+  /// still says "Continue". Single-season only, same limit as the grey-out.
+  ({int index, bool hasResume}) _resumeTarget(List<Episode> eps) {
+    if (eps.isEmpty) return (index: 0, hasResume: false);
+    final store = sl<ResumeStore>();
+    final hasLocal = eps.any(
+      (e) => store.get(widget.item.sourceId, widget.item.url, e.id) != null,
+    );
+    if (hasLocal) return (index: _resumeIndex(eps), hasResume: true);
+    final p = _trackerProgress;
+    if (p != null && p > 0 && seasonsOf(eps).length <= 1) {
+      for (var j = 0; j < eps.length; j++) {
+        final n = eps[j].number?.toInt();
+        if (n != null && n > p) return (index: j, hasResume: true);
+      }
+    }
+    return (index: 0, hasResume: false);
+  }
+
   // ── Downloads ─────────────────────────────────────────────────────────────
 
   /// The main Download button. A single movie/episode goes straight to the
@@ -812,8 +834,10 @@ class _DetailViewState extends State<_DetailView>
     // Kick the (once-per-detail) tracker-progress lookup for grey-out.
     _maybeFetchTrackerProgress(detail);
 
-    // Resume / play button logic. PRESERVED.
-    final resumeIdx = _resumeIndex(eps);
+    // Resume / play button logic. Local playback first; else fall back to the
+    // tracker's watched count (see _resumeTarget). Local case is unchanged.
+    final resume = _resumeTarget(eps);
+    final resumeIdx = resume.index;
     // Warm the stream for the episode Play will start, in the background, so
     // tapping Play is near-instant. Deferred to after this frame so it can't
     // affect the detail screen's rendering/scroll.
@@ -824,7 +848,7 @@ class _DetailViewState extends State<_DetailView>
     final episodeNum = eps.isNotEmpty
         ? (eps[resumeIdx].number?.toInt() ?? resumeIdx + 1)
         : 1;
-    final buttonLabel = hasAnyMark ? 'Continue E$episodeNum' : 'Play';
+    final buttonLabel = resume.hasResume ? 'Continue E$episodeNum' : 'Play';
 
     // Cover / backdrop.
     final coverUrl = detail.cover ?? item.cover ?? '';
