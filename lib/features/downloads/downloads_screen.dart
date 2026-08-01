@@ -500,6 +500,16 @@ class _ShowGroup extends StatelessWidget {
                     ],
                   ),
                 ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: AppColors.textTertiary,
+                    size: 22,
+                  ),
+                  tooltip: 'Delete all episodes',
+                  onPressed: () => _confirmDeleteAll(context),
+                ),
                 AnimatedRotation(
                   turns: expanded ? 0.25 : 0.0,
                   duration: const Duration(milliseconds: 180),
@@ -517,6 +527,40 @@ class _ShowGroup extends StatelessWidget {
         const SizedBox(height: 6),
       ],
     );
+  }
+
+  /// Confirm, then wipe every episode of this show in one go.
+  Future<void> _confirmDeleteAll(BuildContext context) async {
+    final n = records.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Delete all downloads?', style: AppText.headline),
+        content: Text(
+          'Remove all $n ${n == 1 ? 'episode' : 'episodes'} of '
+          '“${records.first.showTitle}” from this device?',
+          style: AppText.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: Text(
+              'Cancel',
+              style: AppText.button.copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: Text(
+              'Delete all',
+              style: AppText.button.copyWith(color: AppColors.accent),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await manager.deleteAll(records);
   }
 }
 

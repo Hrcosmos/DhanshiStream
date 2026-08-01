@@ -732,6 +732,19 @@ class DownloadManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Delete every download in [recs] — a whole show group in one go. Cancels
+  /// active ones, removes the records + files. Best-effort per item (one
+  /// failure never blocks the rest); snapshots first since [delete] mutates the
+  /// record map as it goes.
+  Future<void> deleteAll(Iterable<DownloadRecord> recs) async {
+    for (final r in recs.toList()) {
+      try {
+        await delete(r);
+      } catch (_) {}
+    }
+    notifyListeners();
+  }
+
   static const MethodChannel _deviceChannel = MethodChannel(
     'com.spyou.watch_app/device',
   );

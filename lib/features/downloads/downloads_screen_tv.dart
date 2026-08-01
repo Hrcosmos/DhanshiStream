@@ -155,6 +155,19 @@ class _TvShowGroup extends StatelessWidget {
                   ],
                 ),
               ),
+              TvFocusable(
+                scale: 1.1,
+                semanticLabel: 'Delete all episodes',
+                onTap: () => _confirmDeleteAllTv(context),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.delete_outline_rounded,
+                    color: AppColors.textTertiary,
+                    size: 24,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -177,6 +190,82 @@ class _TvShowGroup extends StatelessWidget {
           ),
         const SizedBox(height: 6),
       ],
+    );
+  }
+
+  /// D-pad confirm, then wipe every episode of this show. Defaults focus to
+  /// Cancel so a stray OK press can't delete a whole show.
+  Future<void> _confirmDeleteAllTv(BuildContext context) async {
+    final n = records.length;
+    await showDialog<void>(
+      context: context,
+      builder: (dctx) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 80, vertical: 48),
+        child: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 6),
+                child: Text(
+                  'Delete all downloads?',
+                  style: AppText.title.copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: Text(
+                  'Remove all $n ${n == 1 ? 'episode' : 'episodes'} of '
+                  '“${records.first.showTitle}” from this device?',
+                  style: AppText.body,
+                ),
+              ),
+              const Divider(height: 1, color: AppColors.hairline),
+              TvFocusable(
+                autofocus: true,
+                onTap: () => Navigator.of(dctx).pop(),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.close_rounded,
+                          color: AppColors.textPrimary, size: 22),
+                      SizedBox(width: 16),
+                      Text('Cancel', style: AppText.headline),
+                    ],
+                  ),
+                ),
+              ),
+              TvFocusable(
+                onTap: () {
+                  Navigator.of(dctx).pop();
+                  unawaited(manager.deleteAll(records));
+                },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded,
+                          color: AppColors.accent, size: 22),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Delete all',
+                        style: AppText.headline.copyWith(color: AppColors.accent),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
