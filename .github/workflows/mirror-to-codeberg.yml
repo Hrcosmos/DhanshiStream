@@ -1,0 +1,28 @@
+name: Mirror to Codeberg
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Codeberg
+        env:
+          CB_USER: ${{ secrets.CODEBERG_USER }}
+          CB_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          CB_REPO: ${{ secrets.CODEBERG_REPO }}
+        run: |
+          git remote add codeberg "https://${CB_USER}:${CB_TOKEN}@codeberg.org/${CB_USER}/${CB_REPO}.git" 2>/dev/null || \
+          git remote set-url codeberg "https://${CB_USER}:${CB_TOKEN}@codeberg.org/${CB_USER}/${CB_REPO}.git"
+          git push --mirror codeberg
