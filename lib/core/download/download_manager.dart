@@ -613,6 +613,19 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
+  /// Re-download a failed record from scratch: forget any stale mirror list,
+  /// clear the error, and resolve a fresh source. No-op for done/active
+  /// downloads and for torrents (those are re-added from the detail screen).
+  Future<void> retry(DownloadRecord rec) async {
+    if (rec.isTorrent || rec.status == DownloadStatus.done || rec.isActive) {
+      return;
+    }
+    _candidates.remove(rec.id); // resolve fresh mirrors
+    await _resolveAndEnqueue(
+      rec.copyWith(status: DownloadStatus.queued, error: () => null),
+    );
+  }
+
   Future<void> cancel(DownloadRecord rec) async {
     _candidates.remove(rec.id); // user stopped it — don't auto-advance mirrors
     // Mark canceled FIRST so any in-flight resolve/update sees it and bails

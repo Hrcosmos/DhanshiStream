@@ -204,6 +204,9 @@ class _TvDownloadActions extends StatelessWidget {
       out.add(('Resume', Icons.play_arrow_rounded,
           () => unawaited(manager.resume(r))));
     }
+    if (r.status == DownloadStatus.failed && !r.isTorrent) {
+      out.add(('Retry', Icons.refresh_rounded, () => unawaited(manager.retry(r))));
+    }
     if (r.isActive) {
       out.add(('Cancel', Icons.close_rounded, () => unawaited(manager.delete(r))));
     }

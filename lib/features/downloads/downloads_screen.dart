@@ -739,6 +739,8 @@ class _TileMenu extends StatelessWidget {
             unawaited(manager.pause(r));
           case 'resume':
             unawaited(manager.resume(r));
+          case 'retry':
+            unawaited(manager.retry(r));
           // Cancel an in-flight download = stop it AND remove it from the list
           // (delete cancels the task, drops the record, and clears fallbacks).
           case 'cancel':
@@ -751,6 +753,8 @@ class _TileMenu extends StatelessWidget {
           _item('pause', Icons.pause_rounded, 'Pause'),
         if (r.status == DownloadStatus.paused)
           _item('resume', Icons.play_arrow_rounded, 'Resume'),
+        if (r.status == DownloadStatus.failed && !r.isTorrent)
+          _item('retry', Icons.refresh_rounded, 'Retry'),
         if (r.isActive) _item('cancel', Icons.close_rounded, 'Cancel'),
         _item('delete', Icons.delete_outline_rounded, 'Delete'),
       ],
