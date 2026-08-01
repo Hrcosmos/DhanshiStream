@@ -17,12 +17,19 @@
     <!-- Android TV leanback: required=false so the app still installs on phones. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- enableOnBackInvokedCallback stays FALSE. Turning on Android's predictive
+         back gesture froze the UI when swiping back on some GPUs (confirmed on a
+         MediaTek Helio G100 / Mali-G57) under Impeller — the gesture's route-
+         snapshot render hangs there. We don't draw the predictive peek anyway
+         (no PredictiveBackPageTransitionsBuilder), so this just uses the legacy
+         back gesture, which works everywhere. Re-enabling needs both the theme
+         transition builder AND a re-test on that device. -->
     <application
         android:label="Zangetsu"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/tv_banner"
-        android:enableOnBackInvokedCallback="true">
+        android:enableOnBackInvokedCallback="false">
         <!-- flutter_background_service declares this service but without a
              foregroundServiceType, which Android 14+ requires for dataSync.
              Same attrs as the plugin + the type (merged, no conflict). -->
