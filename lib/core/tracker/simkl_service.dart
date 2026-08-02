@@ -162,22 +162,24 @@ class SimklService extends ChangeNotifier implements Tracker {
 
   // ── Writes (anime via MAL id, movies/series via TMDB id) ────────────────────
 
-  /// Resolve which Simkl bucket + external id to use. Anime → `shows` with
-  /// `ids.mal`; series → `shows`, movie → `movies`, each keyed by `tmdb` when
-  /// available else `imdb`. Null when there's no usable id (Simkl needs one).
+  /// Resolve which Simkl bucket + external ids to use. Anime (mal) and series
+  /// go in `shows`, a pure movie in `movies`. Include EVERY id we have (mal +
+  /// tmdb + imdb) so Simkl can match on whichever it knows — e.g. a MovieBox
+  /// title that we promoted to anime by a season-specific mal Simkl lacks still
+  /// resolves via its tmdb id. Null when there's no usable id at all.
   ({String bucket, Map<String, dynamic> ids})? _target(
     int? malId,
     int? tmdbId,
     bool tmdbIsTv,
     String? imdbId,
   ) {
-    if (malId != null) return (bucket: 'shows', ids: {'mal': '$malId'});
-    final bucket = tmdbIsTv ? 'shows' : 'movies';
-    if (tmdbId != null) return (bucket: bucket, ids: {'tmdb': '$tmdbId'});
-    if (imdbId != null && imdbId.isNotEmpty) {
-      return (bucket: bucket, ids: {'imdb': imdbId});
-    }
-    return null;
+    final ids = <String, dynamic>{};
+    if (malId != null) ids['mal'] = '$malId';
+    if (tmdbId != null) ids['tmdb'] = '$tmdbId';
+    if (imdbId != null && imdbId.isNotEmpty) ids['imdb'] = imdbId;
+    if (ids.isEmpty) return null;
+    final bucket = (malId != null || tmdbIsTv) ? 'shows' : 'movies';
+    return (bucket: bucket, ids: ids);
   }
 
   Future<bool> _post(String path, Map<String, dynamic> body) async {
