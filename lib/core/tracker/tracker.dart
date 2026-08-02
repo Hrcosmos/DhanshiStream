@@ -12,12 +12,17 @@ class TrackerListItem {
     required this.status,
     this.progress,
     this.score,
+    this.tmdbIsTv = false,
   });
 
   final MediaItem item;
   final WatchStatus status; // planning | watching | completed | paused | dropped
   final int? progress; // episodes watched (optional, for display)
   final double? score; // user score 0–10 (optional, for display)
+
+  /// For non-anime entries resolved by TMDB id (Simkl movies/TV): whether this
+  /// is a TV show, so writes go to the right bucket. Ignored for anime.
+  final bool tmdbIsTv;
 }
 
 /// The user's current entry for ONE title, read back from a tracker to fill the

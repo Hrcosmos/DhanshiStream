@@ -309,67 +309,96 @@ class SimklService extends ChangeNotifier implements Tracker {
   static double? _asDouble(Object? v) =>
       v is num ? v.toDouble() : (v is String ? double.tryParse(v) : null);
 
-  /// Read the connected user's full Simkl anime library as metadata stubs +
-  /// status. Best-effort: `[]` when disconnected or on ANY error (never throws).
+  /// Read the connected user's full Simkl library — anime, TV shows AND movies —
+  /// as metadata stubs + status. Best-effort: `[]` when disconnected or on ANY
+  /// error (never throws).
   @override
   Future<List<TrackerListItem>> fetchList() async {
     if (!isConnected) return const [];
     try {
+      // `/sync/all-items` (no type) returns every list: { anime, shows, movies }.
       final res = await _dio.get<dynamic>(
-        '$_api/sync/all-items/anime?extended=full',
+        '$_api/sync/all-items?extended=full',
         options: Options(
           headers: _headers,
           validateStatus: (s) => s != null && s < 500,
         ),
       );
       final data = res.data;
-      // `/sync/all-items/anime` nests the list under "anime"; some accounts use
-      // "shows" for anime tracked as shows — accept either.
-      final entries = (data is Map) ? (data['anime'] ?? data['shows']) : null;
-      if (entries is! List) {
+      if (data is! Map) {
         debugPrint(
-          '[simkl] fetchList: no list — status=${res.statusCode} '
-          'keys=${data is Map ? data.keys.toList() : data.runtimeType}',
+          '[simkl] fetchList: unexpected — status=${res.statusCode} '
+          '${data.runtimeType}',
         );
         return const [];
       }
 
       final out = <TrackerListItem>[];
-      var idx = 0;
-      for (final e in entries) {
-        if (e is! Map) continue;
-        final status = _statusFromSimkl(e['status'] as String?);
-        if (status == null) continue;
-        // Anime/show entries nest the media under "show"; fall back to the
-        // entry itself if a variant inlines the fields.
-        final show = (e['show'] is Map) ? e['show'] as Map : e;
+      // Parse one bucket. Anime is keyed by MAL id (type anime); shows/movies by
+      // TMDB id (type movie — TV groups under "Movies & TV"). [isTv] lets the
+      // edit sheet write shows back to Simkl's `shows` bucket, not `movies`.
+      void parseBucket(
+        Object? list, {
+        required ProviderType type,
+        required bool anime,
+        required bool isTv,
+      }) {
+        if (list is! List) return;
+        for (final e in list) {
+          if (e is! Map) continue;
+          final status = _statusFromSimkl(e['status'] as String?);
+          if (status == null) continue;
+          // Media nests under "show" (anime/shows) or "movie"; some variants
+          // inline the fields on the entry itself.
+          final media = (e['show'] is Map)
+              ? e['show'] as Map
+              : (e['movie'] is Map)
+                  ? e['movie'] as Map
+                  : e;
 
-        final ids = (show['ids'] is Map) ? show['ids'] as Map : const {};
-        final simklId = _asInt(ids['simkl']);
-        final malId = _asInt(ids['mal']);
-        final title =
-            (show['title'] as String?) ?? (e['title'] as String?) ?? 'Unknown';
+          final ids = (media['ids'] is Map) ? media['ids'] as Map : const {};
+          final simklId = _asInt(ids['simkl']);
+          final malId = anime ? _asInt(ids['mal']) : null;
+          final tmdbId = anime ? null : _asInt(ids['tmdb']);
+          final title = (media['title'] as String?) ??
+              (e['title'] as String?) ??
+              'Unknown';
 
-        final rawScore = _asDouble(e['user_rating']);
-        final score = (rawScore == null || rawScore <= 0) ? null : rawScore;
+          final rawScore = _asDouble(e['user_rating']);
+          final score = (rawScore == null || rawScore <= 0) ? null : rawScore;
 
-        out.add(TrackerListItem(
-          item: MediaItem(
-            id: 'tracker:simkl:${simklId ?? malId ?? idx}',
-            title: title,
-            cover: _posterUrl(show['poster']),
-            url: '',
-            type: ProviderType.anime,
-            sourceId: '',
-            malId: malId,
-          ),
-          status: status,
-          progress: _asInt(e['watched_episodes_count']),
-          score: score,
-        ));
-        idx++;
+          out.add(TrackerListItem(
+            item: MediaItem(
+              id: 'tracker:simkl:${simklId ?? malId ?? tmdbId ?? out.length}',
+              title: title,
+              cover: _posterUrl(media['poster']),
+              url: '',
+              type: type,
+              sourceId: '',
+              malId: malId,
+              tmdbId: tmdbId,
+            ),
+            status: status,
+            progress: _asInt(e['watched_episodes_count']),
+            score: score,
+            tmdbIsTv: isTv,
+          ));
+        }
       }
-      debugPrint('[simkl] fetchList: ${out.length}/${entries.length} items');
+
+      parseBucket(data['anime'],
+          type: ProviderType.anime, anime: true, isTv: false);
+      parseBucket(data['shows'],
+          type: ProviderType.movie, anime: false, isTv: true);
+      parseBucket(data['movies'],
+          type: ProviderType.movie, anime: false, isTv: false);
+
+      debugPrint(
+        '[simkl] fetchList: ${out.length} items '
+        '(anime=${(data['anime'] as List?)?.length ?? 0} '
+        'shows=${(data['shows'] as List?)?.length ?? 0} '
+        'movies=${(data['movies'] as List?)?.length ?? 0})',
+      );
       return out;
     } catch (e) {
       debugPrint('[simkl] fetchList failed: $e');

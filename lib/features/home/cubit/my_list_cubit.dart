@@ -8,14 +8,19 @@ import '../../../core/playback/my_list.dart';
 /// One My List row: the title plus its library status (null = saved without a
 /// status, e.g. a legacy bookmark).
 class MyListEntry {
-  const MyListEntry(this.item, this.status, {this.progress, this.score});
+  const MyListEntry(this.item, this.status,
+      {this.progress, this.score, this.tmdbIsTv = false});
   final MediaItem item;
   final WatchStatus? status;
 
   /// Episodes watched / user score — populated only for tracker lists (AniList /
-  /// MAL), which read these back per entry. Always null for the own My List.
+  /// MAL / Simkl), which read these back per entry. Always null for the own list.
   final int? progress;
   final double? score;
+
+  /// Simkl movies/TV are resolved by TMDB id; this marks TV shows so an edit
+  /// writes to the right Simkl bucket. False for anime and the own list.
+  final bool tmdbIsTv;
 }
 
 /// Owns My List — the user's OWN saved titles ([MyListStore]), each annotated

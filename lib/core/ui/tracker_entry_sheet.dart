@@ -20,6 +20,7 @@ Future<void> showTrackerEntrySheet(
   WatchStatus? status,
   int? progress,
   double? score,
+  bool tmdbIsTv = false,
   VoidCallback? onFind,
   VoidCallback? onChanged,
 }) async {
@@ -36,6 +37,7 @@ Future<void> showTrackerEntrySheet(
       status: status,
       progress: progress,
       score: score,
+      tmdbIsTv: tmdbIsTv,
       onFind: onFind,
       onChanged: onChanged,
     ),
@@ -49,6 +51,7 @@ class _TrackerEntrySheet extends StatefulWidget {
     required this.status,
     required this.progress,
     required this.score,
+    required this.tmdbIsTv,
     required this.onFind,
     required this.onChanged,
   });
@@ -58,6 +61,7 @@ class _TrackerEntrySheet extends StatefulWidget {
   final WatchStatus? status;
   final int? progress;
   final double? score;
+  final bool tmdbIsTv;
   final VoidCallback? onFind;
   final VoidCallback? onChanged;
 
@@ -85,14 +89,12 @@ class _TrackerEntrySheetState extends State<_TrackerEntrySheet> {
       return;
     }
     setState(() => _busy = true);
-    // tmdbIsTv left false: AniList/MAL resolve by malId (anime); the rare Simkl
-    // TV case isn't reachable from these tracker lists today.
-    // ponytail: thread the real tmdbIsTv when Simkl TV lists become editable.
     await widget.tracker.updateEntry(
       malId: widget.item.malId,
       tmdbId: widget.item.tmdbId,
       imdbId: widget.item.imdbId,
       title: widget.item.title,
+      tmdbIsTv: widget.tmdbIsTv,
       status: statusChanged ? _status : null,
       score: scoreChanged ? _score.toDouble() : null,
       progress: progressChanged ? _progress : null,
@@ -109,6 +111,7 @@ class _TrackerEntrySheetState extends State<_TrackerEntrySheet> {
       tmdbId: widget.item.tmdbId,
       imdbId: widget.item.imdbId,
       title: widget.item.title,
+      tmdbIsTv: widget.tmdbIsTv,
     );
     widget.onChanged?.call();
     if (mounted) Navigator.pop(context);

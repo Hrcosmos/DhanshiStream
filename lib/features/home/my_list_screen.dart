@@ -662,6 +662,7 @@ class _MyListViewState extends State<_MyListView> {
                   status: entry.status,
                   progress: entry.progress,
                   score: entry.score,
+                  tmdbIsTv: entry.tmdbIsTv,
                   onFind: () => _openTrackerItem(context, entry.item),
                   onChanged: () =>
                       context.read<TrackerListCubit>().refresh(),
