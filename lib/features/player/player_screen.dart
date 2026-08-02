@@ -1242,7 +1242,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               active: !_sleepActive,
               onTap: () => choose(null),
             ),
-            for (final m in const [15, 30, 45, 60])
+            for (final m in const [5, 15, 30, 45, 60])
               _SheetRow(
                 label: '$m minutes',
                 active: false,
