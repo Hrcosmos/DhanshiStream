@@ -62,3 +62,6 @@ android/app/src/test/resources/aniyomi/*.apk
 .env.*
 *.local
 supabase/.env
+
+# Android Gradle build output (was accidentally tracked)
+/android/build/
