@@ -34,6 +34,13 @@ class AniListApi {
       final t = _token();
       if (t == null || t.isEmpty) return null;
       headers['Authorization'] = 'Bearer $t';
+    } else {
+      // AniList now 403s ANONYMOUS API access, so authenticate reads too when
+      // the user is signed in (these queries request no viewer-specific fields,
+      // so the result is identical). Still attempt anonymously when there's no
+      // token — no worse than before.
+      final t = _token();
+      if (t != null && t.isNotEmpty) headers['Authorization'] = 'Bearer $t';
     }
     try {
       final res = await _dio.post<dynamic>(

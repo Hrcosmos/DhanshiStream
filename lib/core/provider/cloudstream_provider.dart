@@ -166,6 +166,18 @@ class CloudStreamProvider implements BaseProvider {
   /// home source switcher.
   ProviderType get providerType => _providerType;
 
+  /// Item-level type. An anime-ONLY source (every advertised type is anime)
+  /// serves nothing but anime, so a coarse per-item TvType — many plugins tag
+  /// anime as "TvSeries"/"Movie" — must not downgrade it to movie. Mixed and
+  /// non-anime sources keep the existing per-item hint (falling back to the
+  /// source default), so their behaviour is unchanged.
+  ProviderType itemType(String? csType) {
+    if (types.isNotEmpty && types.every(_kAnimeTypes.contains)) {
+      return ProviderType.anime;
+    }
+    return _typeFromCsType(csType) ?? _providerType;
+  }
+
   @override
   Future<ProviderInfo> getInfo() async => ProviderInfo(
     name: name,
@@ -255,7 +267,7 @@ class CloudStreamProvider implements BaseProvider {
       description: (m['plot'] as String?),
       episodes: episodes,
       year: (m['year'] as num?)?.toInt().toString(),
-      type: _typeFromCsType(csType) ?? _providerType,
+      type: itemType(csType),
       sourceId: sourceId,
       // Sub/Dub episode counts → drive the app's Sub/Dub toggle (download +
       // player). Both are reported regardless of the requested category.
@@ -563,7 +575,7 @@ class CloudStreamProvider implements BaseProvider {
       cover: (m['posterUrl'] as String?),
       coverHeaders: coverHeaders,
       url: url,
-      type: _typeFromCsType(m['type'] as String?) ?? _providerType,
+      type: itemType(m['type'] as String?),
       sourceId: sourceId,
     );
   }

@@ -104,6 +104,13 @@ class DetailCubit extends Cubit<DetailState> {
   final String _url;
   final TitlePrefsStore _prefs;
 
+  /// The in-flight (or completed) movie→anime MAL-id resolution for this title,
+  /// if it's a movie-typed candidate. The player launch awaits this so a fast
+  /// Play still scrobbles to AniList/MAL instead of losing the race. Null when
+  /// the title isn't a movie-typed promotion candidate.
+  Future<int?>? _animePromotion;
+  Future<int?>? get animePromotion => _animePromotion;
+
   /// The owning item's source. When null, repo calls fall back to the
   /// active source. Set from `DetailScreen(item:).sourceId` so a title
   /// opened from My List / cross-source rows queries its OWN provider.
@@ -171,6 +178,23 @@ class DetailCubit extends Cubit<DetailState> {
           emit(state.copyWith(detail: d));
         }
       } catch (_) {/* keep going without it */}
+    }
+
+    // A movie-typed title from an anime-capable (mixed) source might actually be
+    // anime the plugin tagged as TvSeries/Movie. Promote it — and route it to
+    // the anime trackers — ONLY on a strict AniList match (exact title + year).
+    // Gated to anime-capable sources so real movie catalogs never hit AniList.
+    if (d.malId == null && d.type == ProviderType.movie) {
+      final promotion = sl<MetadataEnrichment>().promoteMovieToAnimeMalId(d);
+      _animePromotion = promotion; // Play awaits this same future
+      try {
+        final mal = await promotion;
+        if (isClosed) return;
+        if (mal != null) {
+          d = d.copyWith(malId: mal, type: ProviderType.anime);
+          emit(state.copyWith(detail: d));
+        }
+      } catch (_) {/* stays a movie */}
     }
 
     // Prefer id-based enrichment (AniList/TMDB) — it's richer: actor photos,

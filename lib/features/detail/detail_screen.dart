@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
 import '../../core/discord/discord_rpc.dart';
+import '../../core/metadata/metadata_enrichment.dart';
 import '../../core/notify/cs_notify.dart';
 import '../../core/notify/notification_service.dart';
 import '../../core/notify/subscription_store.dart';
@@ -519,12 +520,12 @@ class _DetailViewState extends State<_DetailView>
 
   // ── Cross-source player launch — PRESERVED EXACTLY ────────────────────────
 
-  void _openPlayer(
+  Future<void> _openPlayer(
     List<Episode> episodes,
     int index,
     MediaDetail detail,
     String category,
-  ) {
+  ) async {
     // Available sub/dub categories from the detail — lets the PLAYER offer the
     // Sub/Dub switch (the Detail no longer does). Empty/single → treated as a
     // single-category source by the player (no Version section).
@@ -544,6 +545,25 @@ class _DetailViewState extends State<_DetailView>
         ? preferred
         : category;
 
+    // Scrobble ids. A movie-typed title from a movie source (e.g. MovieBox) may
+    // actually be anime — resolve its MAL id here so AniList/MAL scrobble. We
+    // await the detail's in-flight promotion (started on load); if Play beat it,
+    // resolve inline. Best-effort — a miss just leaves it a movie.
+    var malId = detail.malId ?? widget.item.malId;
+    var scrobbleTitle =
+        detail.type == ProviderType.anime ? detail.title : null;
+    if (malId == null && detail.type == ProviderType.movie) {
+      try {
+        final promoted = await (context.read<DetailCubit>().animePromotion ??
+            sl<MetadataEnrichment>().promoteMovieToAnimeMalId(detail));
+        if (promoted != null) {
+          malId = promoted;
+          scrobbleTitle = detail.title;
+        }
+      } catch (_) {/* leave as a movie */}
+    }
+    if (!mounted) return;
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlayerScreen(
@@ -562,10 +582,8 @@ class _DetailViewState extends State<_DetailView>
           coverHeaders: detail.coverHeaders ?? widget.item.coverHeaders,
           showUrl: widget.item.url,
           category: launchCategory,
-          malId: detail.malId ?? widget.item.malId,
-          scrobbleTitle: detail.type == ProviderType.anime
-              ? detail.title
-              : null,
+          malId: malId,
+          scrobbleTitle: scrobbleTitle,
           tmdbId: detail.tmdbId ?? widget.item.tmdbId,
           tmdbIsTv: detail.tmdbIsTv,
           imdbId: detail.imdbId ?? widget.item.imdbId,

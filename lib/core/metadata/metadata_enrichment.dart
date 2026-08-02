@@ -12,9 +12,13 @@ import '../models/provider_info.dart';
 /// keys off ids the providers already expose. Best-effort: any miss/failure
 /// yields empty lists, so the Detail tabs fall back to their empty state.
 class MetadataEnrichment {
-  MetadataEnrichment(Dio dio)
+  /// [anilistToken] supplies the signed-in user's AniList access token. AniList
+  /// has disabled UNAUTHENTICATED API access, so anonymous searches (malId
+  /// resolution, cast/relations by title) now 403 — pass the token so these
+  /// calls authenticate like the tracker's do. Falls back to anonymous.
+  MetadataEnrichment(Dio dio, [String? Function()? anilistToken])
       : _dio = dio,
-        _anilist = AniListApi(dio, () => null);
+        _anilist = AniListApi(dio, anilistToken ?? () => null);
 
   final Dio _dio;
   final AniListApi _anilist;
@@ -34,6 +38,69 @@ class MetadataEnrichment {
       return null;
     }
   }
+
+  /// A movie-typed title from an anime-capable source may actually be anime the
+  /// plugin mislabeled. Return its MAL id ONLY on a strict AniList match (exact
+  /// normalized title + year within ±1); a known year is required — no year, no
+  /// guess. Null otherwise. The caller gates on source anime-capability.
+  Future<int?> promoteMovieToAnimeMalId(MediaDetail d) async {
+    final year = int.tryParse(d.year ?? '');
+    if (year == null || d.title.trim().isEmpty) return null;
+    try {
+      final candidates = await _anilist.searchMedia(d.title);
+      return confidentAnimeMalId(d.title, year, candidates);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Pure guard: the MAL id of the first AniList candidate whose normalized
+  /// title (romaji OR english) EXACTLY equals [title] and whose seasonYear is
+  /// within ±1 of [year]. Null if none. Kept pure + public so the promotion
+  /// rule can be unit-tested without the network.
+  static int? confidentAnimeMalId(
+    String title,
+    int year,
+    List<Map<String, dynamic>> candidates,
+  ) {
+    final q = _normTitle(title);
+    if (q.isEmpty) return null;
+    for (final m in candidates) {
+      final sy = (m['seasonYear'] as num?)?.toInt();
+      if (sy == null || (sy - year).abs() > 1) continue;
+      final t = m['title'];
+      final romaji = t is Map ? _normTitle('${t['romaji'] ?? ''}') : '';
+      final english = t is Map ? _normTitle('${t['english'] ?? ''}') : '';
+      if (_titleMatches(q, romaji) || _titleMatches(q, english)) {
+        final idMal = (m['idMal'] as num?)?.toInt();
+        if (idMal != null) return idMal;
+      }
+    }
+    return null;
+  }
+
+  /// True when the normalized query [q] identifies the AniList title [cand]:
+  /// an exact match, OR [q] is the base title of a season/sequel entry (AniList
+  /// appends a season marker — "Season 4", "2nd Season", "III", "Part 2", …).
+  /// The season-marker requirement is what keeps a real film ("Monster") from
+  /// grabbing an unrelated show ("Monster Musume") on a bare prefix.
+  static bool _titleMatches(String q, String cand) {
+    if (cand.isEmpty) return false;
+    if (q == cand) return true;
+    if (cand.startsWith(q)) {
+      return _seasonSuffix.hasMatch(cand.substring(q.length));
+    }
+    return false;
+  }
+
+  /// A normalized title tail that marks a season/sequel (not a different show).
+  static final RegExp _seasonSuffix = RegExp(
+    r'^(season\d*|\d+(nd|rd|th|st)?season|\d+|ii|iii|iv|v|vi|part\d*|cour\d*|final(season)?)$',
+  );
+
+  /// Lowercase, keep only a–z 0–9 — so "Re:ZERO" and "Re Zero" compare equal.
+  static String _normTitle(String s) =>
+      s.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
 
   Future<({List<CastMember> cast, List<MediaRelation> relations})> fetch(
     MediaDetail d,

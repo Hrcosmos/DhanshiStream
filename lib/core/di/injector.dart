@@ -250,7 +250,10 @@ Future<void> initDependencies() async {
 
   // Detail-screen Cast + Relations enrichment (AniList for anime, TMDB for
   // movie/TV). Keys off the malId/tmdbId the providers already expose.
-  sl.registerSingleton<MetadataEnrichment>(MetadataEnrichment(dio));
+  // Pass the AniList token (lazily — AniListService is registered below) so the
+  // enrichment's searches authenticate; AniList now 403s anonymous API calls.
+  sl.registerSingleton<MetadataEnrichment>(
+      MetadataEnrichment(dio, () => sl<AniListService>().store.token));
 
   // Person pages (characters + voice actors/staff from AniList, movie/TV people
   // from TMDB), opened from the Detail screen's Cast tab.
