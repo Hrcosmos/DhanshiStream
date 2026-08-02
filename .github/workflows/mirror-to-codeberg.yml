@@ -7,22 +7,79 @@ on:
     tags:
       - "**"
   workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+concurrency:
+  group: mirror-to-codeberg
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   mirror:
+    if: github.repository == 'Spyou/Zangetsu'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Push to Codeberg
+      - name: Configure credentials via .netrc
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CB_USER: ${{ secrets.CODEBERG_USER }}
           CB_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat > "${HOME}/.netrc" <<EOF
+          machine github.com
+          login x-access-token
+          password ${GH_TOKEN}
+
+          machine codeberg.org
+          login ${CB_USER}
+          password ${CB_TOKEN}
+          EOF
+          chmod 600 "${HOME}/.netrc"
+
+      - name: Clone full mirror from GitHub
+        run: |
+          set -euo pipefail
+          git clone --mirror "https://github.com/${GITHUB_REPOSITORY}.git" repo-mirror
+
+      - name: Sanity-check the mirror before pushing
+        run: |
+          set -euo pipefail
+          cd repo-mirror
+          branch_count=$(git branch -a | wc -l)
+          tag_count=$(git tag | wc -l)
+          echo "Fetched ${branch_count} branches and ${tag_count} tags."
+          if [ "${branch_count}" -eq 0 ]; then
+            echo "::error::Mirror clone produced 0 branches — aborting to avoid wiping Codeberg."
+            exit 1
+          fi
+
+      - name: Push full mirror to Codeberg (with retry)
+        env:
+          CB_USER: ${{ secrets.CODEBERG_USER }}
           CB_REPO: ${{ secrets.CODEBERG_REPO }}
         run: |
-          git remote add codeberg "https://${CB_USER}:${CB_TOKEN}@codeberg.org/${CB_USER}/${CB_REPO}.git" 2>/dev/null || \
-          git remote set-url codeberg "https://${CB_USER}:${CB_TOKEN}@codeberg.org/${CB_USER}/${CB_REPO}.git"
-          git push --mirror codeberg
+          set -euo pipefail
+          cd repo-mirror
+          git remote set-url origin "https://codeberg.org/${CB_USER}/${CB_REPO}.git"
+
+          attempt=1
+          max_attempts=3
+          until git push --mirror origin; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "::error::Push to Codeberg failed after ${max_attempts} attempts."
+              exit 1
+            fi
+            echo "Push attempt ${attempt} failed, retrying in 10s..."
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f "${HOME}/.netrc"
