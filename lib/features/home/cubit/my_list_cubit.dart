@@ -8,9 +8,14 @@ import '../../../core/playback/my_list.dart';
 /// One My List row: the title plus its library status (null = saved without a
 /// status, e.g. a legacy bookmark).
 class MyListEntry {
-  const MyListEntry(this.item, this.status);
+  const MyListEntry(this.item, this.status, {this.progress, this.score});
   final MediaItem item;
   final WatchStatus? status;
+
+  /// Episodes watched / user score — populated only for tracker lists (AniList /
+  /// MAL), which read these back per entry. Always null for the own My List.
+  final int? progress;
+  final double? score;
 }
 
 /// Owns My List — the user's OWN saved titles ([MyListStore]), each annotated

@@ -106,7 +106,8 @@ class TrackerListCubit extends Cubit<TrackerListState> {
       final raw = await tracker.fetchList();
       if (isClosed) return;
       final entries = [
-        for (final t in raw) MyListEntry(t.item, t.status),
+        for (final t in raw)
+          MyListEntry(t.item, t.status, progress: t.progress, score: t.score),
       ];
       _cache[tracker] = entries;
       // Ignore a result that lands after the user switched away.

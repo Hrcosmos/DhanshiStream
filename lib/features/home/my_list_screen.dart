@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,6 +19,7 @@ import '../../core/ui/buttons.dart';
 import '../../core/ui/list_status_sheet.dart';
 import '../../core/ui/poster_card.dart';
 import '../../core/ui/states.dart';
+import '../../core/ui/tracker_entry_sheet.dart';
 import '../auth/auth_cubit.dart';
 import '../auth/auth_screens.dart';
 import '../detail/detail_screen.dart';
@@ -26,8 +29,9 @@ import 'cubit/tracker_list_cubit.dart';
 import 'my_list_screen_tv.dart';
 import 'search_screen.dart';
 
-/// My List — one unified, status-organised library (the app's saved titles plus
-/// AniList-imported rows), filterable by status and by type.
+/// My List — one library the user browses by source (their own saved list plus
+/// each connected tracker) via a segmented control, and by status via tabs.
+/// Trackers are connected/managed from the header's accounts button.
 class MyListScreen extends StatelessWidget {
   const MyListScreen({super.key});
 
@@ -58,10 +62,7 @@ class _MyListViewState extends State<_MyListView> {
 
   Future<void> _openItem(BuildContext context, MediaItem item) async {
     final cubit = context.read<MyListCubit>();
-    await Navigator.push(
-      context,
-      DetailScreen.route(item),
-    );
+    await Navigator.push(context, DetailScreen.route(item));
     cubit.reload();
   }
 
@@ -80,7 +81,8 @@ class _MyListViewState extends State<_MyListView> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _header(context, tlState),
+                _header(context),
+                _sourceSegmented(context, tlState),
                 Expanded(
                   child: tlState.isMyList
                       ? _myListBody(context)
@@ -97,166 +99,522 @@ class _MyListViewState extends State<_MyListView> {
   double _cellW(BuildContext context) =>
       (MediaQuery.of(context).size.width - 32 - 24) / 3;
 
-  // ── Header (title + source switcher) ──────────────────────────────────────
+  // ── Header: frosted capsule (no avatar) + search/filter + accounts ─────────
 
-  Widget _header(BuildContext context, TrackerListState tlState) {
-    final label = tlState.isMyList ? 'My List' : tlState.tracker!.displayName;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: AppText.largeTitle),
-                if (!tlState.isMyList)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      'Synced from ${tlState.tracker!.displayName}',
-                      style: AppText.caption.copyWith(
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ),
+  Widget _header(BuildContext context) {
+    final hub = sl<TrackerHub>();
+    return AnimatedBuilder(
+      // Rebuild when a tracker connects/disconnects.
+      animation: Listenable.merge(hub.trackers),
+      builder: (context, _) {
+        final n = hub.connected.length;
+        final subtitle = n == 0
+            ? 'Your saved titles'
+            : 'My List + $n tracker${n == 1 ? '' : 's'}';
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: 24,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: AppColors.accent.withValues(alpha: 0.10),
+                  blurRadius: 40,
+                  spreadRadius: -8,
+                  offset: const Offset(0, 8),
+                ),
               ],
             ),
-          ),
-          IconButton(
-            tooltip: 'Switch list',
-            icon: const Icon(
-              Icons.swap_horiz_rounded,
-              color: AppColors.textSecondary,
-            ),
-            onPressed: () => _showSourceSwitcher(context, tlState),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Bottom-sheet switcher: "My List" + each connected tracker (avatar + name).
-  /// With no tracker connected, offers a "Connect a tracker" shortcut into the
-  /// first tracker's settings screen.
-  Future<void> _showSourceSwitcher(
-    BuildContext context,
-    TrackerListState tlState,
-  ) async {
-    final cubit = context.read<TrackerListCubit>();
-    final hub = sl<TrackerHub>();
-    final connected = hub.connected.toList();
-
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.hairline,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 6),
-              ListTile(
-                leading: const Icon(
-                  Icons.bookmark_rounded,
-                  color: AppColors.textSecondary,
-                ),
-                title: Text('My List', style: AppText.body),
-                trailing: tlState.isMyList
-                    ? Icon(Icons.check_rounded, color: AppColors.accent)
-                    : null,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  cubit.selectMyList();
-                },
-              ),
-              for (final t in connected)
-                ListTile(
-                  leading: _switcherAvatar(t),
-                  title: Text(t.displayName, style: AppText.body),
-                  trailing: tlState.tracker == t
-                      ? Icon(Icons.check_rounded, color: AppColors.accent)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    cubit.selectTracker(t);
-                  },
-                ),
-              if (connected.isEmpty)
-                ListTile(
-                  leading: Icon(
-                    Icons.add_link_rounded,
-                    color: AppColors.accent,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(26),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.09),
+                        width: 0.5),
                   ),
-                  title: Text('Connect a tracker', style: AppText.body),
-                  subtitle: Text(
-                    'Link AniList, MyAnimeList or Simkl to view your lists',
-                    style: AppText.caption,
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    final trackers = hub.trackers;
-                    if (trackers.isEmpty) return;
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            TrackerSettingsScreen(tracker: trackers.first),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Library',
+                                style: AppText.title.copyWith(fontSize: 19)),
+                            const SizedBox(height: 1),
+                            Text(
+                              subtitle,
+                              style: AppText.caption.copyWith(
+                                  color: AppColors.textTertiary, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  },
+                      const SizedBox(width: 6),
+                      _pillIcon(
+                        Icons.search_rounded,
+                        'Search',
+                        () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => const SearchScreen()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _pillIcon(
+                        _typeFilter == null
+                            ? Icons.tune_rounded
+                            : Icons.filter_alt_rounded,
+                        'Filter',
+                        () => _openFilterSheet(context),
+                        active: _typeFilter != null,
+                      ),
+                      const SizedBox(width: 8),
+                      _accountsButton(context, hub),
+                    ],
+                  ),
                 ),
-              const SizedBox(height: 8),
-            ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _switcherAvatar(Tracker t) {
-    final url = t.viewerAvatar;
-    if (url != null && url.isNotEmpty) {
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: url,
-          width: 28,
-          height: 28,
-          fit: BoxFit.cover,
-          errorWidget: (_, _, _) => _avatarFallback(),
+  Widget _pillIcon(IconData icon, String tooltip, VoidCallback onTap,
+      {bool active = false}) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: active ? AppColors.accentSoft : AppColors.surface2,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 18, color: AppColors.accent),
+        ),
+      ),
+    );
+  }
+
+  // ── Accounts button (connected avatars + ＋, else "Connect") ───────────────
+
+  Widget _accountsButton(BuildContext context, TrackerHub hub) {
+    final connected = hub.connected.toList();
+    if (connected.isEmpty) {
+      return GestureDetector(
+        onTap: () => _openAccountsSheet(context),
+        child: Container(
+          height: 36,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.4), width: 1.5),
+          ),
+          child: Text(
+            'Connect',
+            style: AppText.caption.copyWith(
+                color: AppColors.accent,
+                fontWeight: FontWeight.w800,
+                fontSize: 13),
+          ),
         ),
       );
     }
-    return _avatarFallback();
+    final show = connected.take(3).toList();
+    return Tooltip(
+      message: 'Manage trackers',
+      child: GestureDetector(
+        onTap: () => _openAccountsSheet(context),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.fromLTRB(7, 0, 11, 0),
+          decoration: BoxDecoration(
+            color: AppColors.surface2,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24 + (show.length - 1) * 15.0,
+                height: 24,
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < show.length; i++)
+                      Positioned(left: i * 15.0, child: _miniAvatar(show[i])),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 5),
+              Icon(Icons.add_rounded, size: 18, color: AppColors.accent),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  Widget _avatarFallback() => Container(
-    width: 28,
-    height: 28,
-    decoration: BoxDecoration(
-      color: AppColors.surface2,
-      shape: BoxShape.circle,
-    ),
-    child: const Icon(
-      Icons.account_circle_rounded,
-      size: 20,
-      color: AppColors.textTertiary,
-    ),
+  Widget _miniAvatar(Tracker t) {
+    final url = t.viewerAvatar;
+    final letter = t.displayName.isNotEmpty ? t.displayName[0] : '?';
+    final Widget inner = (url != null && url.isNotEmpty)
+        ? CachedNetworkImage(
+            imageUrl: url,
+            width: 20,
+            height: 20,
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => _miniLetter(letter),
+          )
+        : _miniLetter(letter);
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.surface2, width: 2),
+      ),
+      child: ClipOval(child: inner),
+    );
+  }
+
+  Widget _miniLetter(String letter) => Container(
+    width: 20,
+    height: 20,
+    color: AppColors.accent,
+    alignment: Alignment.center,
+    child: Text(letter,
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10)),
   );
 
-  // ── My List body (unchanged behaviour) ────────────────────────────────────
+  Future<void> _openAccountsSheet(BuildContext context) async {
+    final hub = sl<TrackerHub>();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.hairline,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Trackers', style: AppText.headline),
+              ),
+            ),
+            for (final t in hub.trackers)
+              ListTile(
+                leading: SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: (t.isConnected &&
+                          (t.viewerAvatar?.isNotEmpty ?? false))
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: t.viewerAvatar!,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, _, _) => const Icon(
+                                Icons.person_rounded,
+                                color: AppColors.textTertiary),
+                          ),
+                        )
+                      : Icon(
+                          t.isConnected
+                              ? Icons.check_circle_rounded
+                              : Icons.add_link_rounded,
+                          color: t.isConnected
+                              ? AppColors.accent
+                              : AppColors.textSecondary,
+                        ),
+                ),
+                title: Text(t.displayName,
+                    style: AppText.body.copyWith(color: AppColors.textPrimary)),
+                subtitle: Text(
+                  t.isConnected
+                      ? 'Connected${t.viewerName != null ? ' · ${t.viewerName}' : ''}'
+                      : 'Not connected',
+                  style: AppText.caption.copyWith(
+                    color: t.isConnected
+                        ? AppColors.accent
+                        : AppColors.textTertiary,
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textTertiary),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => TrackerSettingsScreen(tracker: t),
+                    ),
+                  );
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Source segmented control (sliding accent thumb) ────────────────────────
+
+  Widget _sourceSegmented(BuildContext context, TrackerListState tlState) {
+    final cubit = context.read<TrackerListCubit>();
+    final hub = sl<TrackerHub>();
+    return AnimatedBuilder(
+      animation: Listenable.merge(hub.trackers),
+      builder: (context, _) {
+        final connected = hub.connected.toList();
+        final segments = <({
+          String label,
+          IconData? icon,
+          String? avatarUrl,
+          bool active,
+          VoidCallback onTap,
+        })>[
+          (
+            label: 'My List',
+            icon: Icons.bookmark_rounded,
+            avatarUrl: null,
+            active: tlState.isMyList,
+            onTap: cubit.selectMyList,
+          ),
+          for (final t in connected)
+            (
+              label: t.displayName == 'MyAnimeList' ? 'MAL' : t.displayName,
+              icon: null,
+              avatarUrl: t.viewerAvatar,
+              active: tlState.tracker == t,
+              onTap: () => cubit.selectTracker(t),
+            ),
+        ];
+        final n = segments.length;
+        final activeIndex = segments.indexWhere((s) => s.active).clamp(0, n - 1);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final segW = (c.maxWidth - 8) / n; // container padding = 4 each side
+              return Container(
+                height: 46,
+                padding: const EdgeInsets.all(4),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: AppColors.surface2,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutQuint,
+                      left: activeIndex * segW,
+                      top: 0,
+                      bottom: 0,
+                      width: segW,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.accent,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        for (final s in segments)
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: s.onTap,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _segAvatar(
+                                    icon: s.icon,
+                                    avatarUrl: s.avatarUrl,
+                                    label: s.label,
+                                    active: s.active,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      s.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppText.body.copyWith(
+                                        color: s.active
+                                            ? Colors.white
+                                            : AppColors.textSecondary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _segAvatar({
+    IconData? icon,
+    String? avatarUrl,
+    required String label,
+    required bool active,
+  }) {
+    final bg = active
+        ? Colors.white.withValues(alpha: 0.22)
+        : Colors.white.withValues(alpha: 0.10);
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: avatarUrl,
+          width: 22,
+          height: 22,
+          fit: BoxFit.cover,
+          errorWidget: (_, _, _) => Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            child: Text(
+              label.isNotEmpty ? label[0] : '?',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11),
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: icon != null
+          ? Icon(icon, size: 14, color: Colors.white)
+          : Text(
+              label.isNotEmpty ? label[0] : '?',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11),
+            ),
+    );
+  }
+
+  // ── Filter sheet (type) ────────────────────────────────────────────────────
+
+  Future<void> _openFilterSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: StatefulBuilder(
+          builder: (sheetCtx, setSheet) {
+            Widget opt(String label, ProviderType? type, IconData icon) {
+              final on = _typeFilter == type;
+              return ListTile(
+                leading: Icon(icon,
+                    color: on ? AppColors.accent : AppColors.textSecondary),
+                title: Text(
+                  label,
+                  style: AppText.body.copyWith(
+                    color: on ? AppColors.accent : AppColors.textPrimary,
+                    fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+                trailing: on
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () {
+                  setState(() => _typeFilter = type);
+                  setSheet(() {});
+                },
+              );
+            }
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.hairline,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Show', style: AppText.headline),
+                  ),
+                ),
+                opt('All types', null, Icons.apps_rounded),
+                opt('Anime', ProviderType.anime, Icons.animation_rounded),
+                opt('Movies & TV', ProviderType.movie, Icons.movie_rounded),
+                const SizedBox(height: 8),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ── My List body ───────────────────────────────────────────────────────────
 
   Widget _myListBody(BuildContext context) {
     return BlocBuilder<MyListCubit, List<MyListEntry>>(
@@ -266,13 +624,13 @@ class _MyListViewState extends State<_MyListView> {
           context,
           entries,
           onTap: (item) => _openItem(context, item),
-          onLongPress: (item) => showListStatusSheet(context, item: item),
+          onMore: (entry) => showListStatusSheet(context, item: entry.item),
         );
       },
     );
   }
 
-  // ── Tracker body (same grid + chips, with refresh + load/empty/error) ─────
+  // ── Tracker body (refresh + load/empty/error) ─────────────────────────────
 
   Widget _trackerBody(BuildContext context, TrackerListState tlState) {
     final Widget content;
@@ -297,8 +655,17 @@ class _MyListViewState extends State<_MyListView> {
                 context,
                 tlState.entries,
                 onTap: (item) => _openTrackerItem(context, item),
-                // Tracker entries are read-only (view-only) — no status sheet.
-                onLongPress: null,
+                onMore: (entry) => showTrackerEntrySheet(
+                  context,
+                  tracker: tlState.tracker!,
+                  item: entry.item,
+                  status: entry.status,
+                  progress: entry.progress,
+                  score: entry.score,
+                  onFind: () => _openTrackerItem(context, entry.item),
+                  onChanged: () =>
+                      context.read<TrackerListCubit>().refresh(),
+                ),
               );
     }
 
@@ -306,8 +673,6 @@ class _MyListViewState extends State<_MyListView> {
       color: AppColors.accent,
       backgroundColor: AppColors.surface,
       onRefresh: () => context.read<TrackerListCubit>().refresh(),
-      // AlwaysScrollable so the pull gesture works even on the empty/error/
-      // loading states (which aren't themselves scrollables).
       child: tlState.status == TrackerListStatus.ready &&
               tlState.entries.isNotEmpty
           ? content
@@ -323,18 +688,25 @@ class _MyListViewState extends State<_MyListView> {
     );
   }
 
-  // ── Shared grid (same card + status/type chips for both sources) ──────────
+  // ── Shared grid: status tabs (with counts) + poster grid ──────────────────
 
   Widget _grid(
     BuildContext context,
     List<MyListEntry> entries, {
     required void Function(MediaItem) onTap,
-    void Function(MediaItem)? onLongPress,
+    void Function(MyListEntry)? onMore,
   }) {
     final cellW = _cellW(context);
-    final hasAnime = entries.any((e) => e.item.type == ProviderType.anime);
-    final hasMovies = entries.any((e) => e.item.type != ProviderType.anime);
-    final presentStatuses = WatchStatus.values
+    // Fixed tab order (All is prepended in _statusTabs): Watching first, then
+    // Plan to Watch, Completed, Paused, Dropped — regardless of enum order.
+    const tabOrder = [
+      WatchStatus.watching,
+      WatchStatus.planning,
+      WatchStatus.completed,
+      WatchStatus.paused,
+      WatchStatus.dropped,
+    ];
+    final presentStatuses = tabOrder
         .where((s) => entries.any((e) => e.status == s))
         .toList();
 
@@ -347,9 +719,8 @@ class _MyListViewState extends State<_MyListView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _statusBar(presentStatuses),
-        if (hasAnime && hasMovies) _typeBar(),
-        const SizedBox(height: 4),
+        _statusTabs(entries, presentStatuses),
+        const SizedBox(height: 8),
         Expanded(
           child: filtered.isEmpty
               ? const EmptyState(
@@ -365,11 +736,11 @@ class _MyListViewState extends State<_MyListView> {
                   cacheExtent: 800,
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 0.62,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 16,
-                      ),
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.62,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 16,
+                  ),
                   itemCount: filtered.length,
                   itemBuilder: (context, i) {
                     final entry = filtered[i];
@@ -379,12 +750,10 @@ class _MyListViewState extends State<_MyListView> {
                       headers: entry.item.coverHeaders,
                       cellWidth: cellW,
                       onTap: () => onTap(entry.item),
-                      // Long-press to change status / remove — the sheet updates
-                      // the stores, and the cubit auto-refreshes via their
-                      // revisions. Null for read-only tracker entries.
-                      onLongPress: onLongPress == null
-                          ? null
-                          : () => onLongPress(entry.item),
+                      // Long-press opens the per-card edit sheet (own list →
+                      // status/remove; tracker → the tracker editor).
+                      onLongPress:
+                          onMore == null ? null : () => onMore(entry),
                     );
                   },
                 ),
@@ -395,8 +764,6 @@ class _MyListViewState extends State<_MyListView> {
 
   /// Open a tracker stub (no provider attached): drop into the app's global
   /// search pre-filled with the title so the user picks the source/result.
-  /// The old single-source-first lookup dead-ended when the title wasn't on
-  /// the active source; the search screen sweeps every source instead.
   void _openTrackerItem(BuildContext context, MediaItem stub) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -405,74 +772,74 @@ class _MyListViewState extends State<_MyListView> {
     );
   }
 
-  // ── Filter bars ────────────────────────────────────────────────────────────
+  // ── Status tabs (counts baked into the labels) ─────────────────────────────
 
-  Widget _statusBar(List<WatchStatus> present) {
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        children: [
-          _chip('All', _statusFilter == null, () {
-            setState(() => _statusFilter = null);
-          }),
-          for (final s in present)
-            _chip(s.shortLabel, _statusFilter == s, () {
-              setState(() => _statusFilter = s);
-            }),
-        ],
-      ),
-    );
-  }
+  Widget _statusTabs(List<MyListEntry> entries, List<WatchStatus> present) {
+    int countOf(WatchStatus? s) =>
+        s == null ? entries.length : entries.where((e) => e.status == s).length;
 
-  Widget _typeBar() {
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        children: [
-          _chip('All types', _typeFilter == null, () {
-            setState(() => _typeFilter = null);
-          }, small: true),
-          _chip('Anime', _typeFilter == ProviderType.anime, () {
-            setState(() => _typeFilter = ProviderType.anime);
-          }, small: true),
-          _chip('Movies', _typeFilter == ProviderType.movie, () {
-            setState(() => _typeFilter = ProviderType.movie);
-          }, small: true),
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(String label, bool active, VoidCallback onTap, {bool small = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: GestureDetector(
+    Widget tab(String label, bool active, int count, VoidCallback onTap) {
+      return GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: small ? 12 : 14, vertical: 7),
+          margin: const EdgeInsets.only(right: 22),
+          padding: const EdgeInsets.only(top: 8, bottom: 10),
           decoration: BoxDecoration(
-            color: active ? AppColors.accent : AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: AppText.caption.copyWith(
-              color: active ? Colors.white : AppColors.textSecondary,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-              fontSize: small ? 12 : 13,
+            border: Border(
+              bottom: BorderSide(
+                color: active ? AppColors.accent : Colors.transparent,
+                width: 2.5,
+              ),
             ),
           ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: AppText.body.copyWith(
+                  color: active ? AppColors.accent : AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14.5,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$count',
+                style: AppText.caption.copyWith(
+                  color: active ? AppColors.accent : AppColors.textTertiary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.hairline)),
+      ),
+      child: SizedBox(
+        height: 42,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(left: 16),
+          children: [
+            tab('All', _statusFilter == null, countOf(null),
+                () => setState(() => _statusFilter = null)),
+            for (final s in present)
+              tab(s.shortLabel, _statusFilter == s, countOf(s),
+                  () => setState(() => _statusFilter = s)),
+          ],
         ),
       ),
     );
   }
 
-  // ── Empty / sign-in ──────────────────────────────────────────────────────
+  // ── Empty / sign-in ────────────────────────────────────────────────────────
+
   Widget _empty(BuildContext context) {
     final auth = context.watch<AuthCubit>().state;
     if (!auth.isLoggedIn) {
@@ -482,11 +849,8 @@ class _MyListViewState extends State<_MyListView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.bookmark_outline,
-                size: 56,
-                color: AppColors.textTertiary,
-              ),
+              const Icon(Icons.bookmark_outline,
+                  size: 56, color: AppColors.textTertiary),
               const SizedBox(height: 16),
               Text(
                 'Sign in to build your list',
