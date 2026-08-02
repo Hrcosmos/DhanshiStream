@@ -272,6 +272,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _sleepTimer;
   bool _sleepActive = false; // a timer or end-of-episode stop is armed
   bool _sleepEndOfEpisode = false;
+  bool _sleepCloseApp = false; // when it fires, exit the app (not just pause)
 
   bool _chatOpen = false; // in-room chat panel visible
 
@@ -1087,6 +1088,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _sleepActive = false;
         _sleepEndOfEpisode = false;
       });
+      if (_sleepCloseApp) SystemNavigator.pop(); // exit the app
       return;
     }
     final hasNext = _c.state.currentIndex + 1 < _c.episodes.length;
@@ -1231,26 +1233,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
 
     _sheet<void>(
-      _SheetColumn(
-        header: 'Sleep timer',
-        children: [
-          _SheetRow(
-            label: 'Off',
-            active: !_sleepActive,
-            onTap: () => choose(null),
-          ),
-          for (final m in const [15, 30, 45, 60])
+      StatefulBuilder(
+        builder: (context, setSheet) => _SheetColumn(
+          header: 'Sleep timer',
+          children: [
             _SheetRow(
-              label: '$m minutes',
-              active: false,
-              onTap: () => choose(Duration(minutes: m)),
+              label: 'Off',
+              active: !_sleepActive,
+              onTap: () => choose(null),
             ),
-          _SheetRow(
-            label: 'End of episode',
-            active: _sleepEndOfEpisode,
-            onTap: () => choose(null, endOfEpisode: true),
-          ),
-        ],
+            for (final m in const [15, 30, 45, 60])
+              _SheetRow(
+                label: '$m minutes',
+                active: false,
+                onTap: () => choose(Duration(minutes: m)),
+              ),
+            _SheetRow(
+              label: 'End of episode',
+              active: _sleepEndOfEpisode,
+              onTap: () => choose(null, endOfEpisode: true),
+            ),
+            _SheetRow(
+              label: 'Close app when timer ends',
+              subtitle: 'Exit the app to save battery',
+              active: false,
+              toggleValue: _sleepCloseApp,
+              onTap: () => setSheet(() => _sleepCloseApp = !_sleepCloseApp),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1266,8 +1277,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (!mounted) return;
         _c.player.pause();
         setState(() => _sleepActive = false);
+        if (_sleepCloseApp) SystemNavigator.pop(); // exit the app
       });
     }
+    // Confirm what was armed — otherwise there's no sign the timer is on.
+    final msg = endOfEpisode
+        ? 'Sleep timer: end of this episode'
+        : d != null
+            ? 'Sleep timer set for ${d.inMinutes} min'
+                '${_sleepCloseApp ? ' · closes the app' : ''}'
+            : 'Sleep timer off';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+      );
     _bumpControls();
   }
 
@@ -3362,6 +3386,15 @@ class _ControlsOverlay extends StatelessWidget {
                       ),
                       tooltip: 'Playback stats',
                       onPressed: onInfo,
+                    ),
+                  // Sleep timer armed — a visible accent moon; tap to adjust or
+                  // cancel. Only shown while a timer / end-of-episode is set.
+                  if (sleepActive)
+                    IconButton(
+                      icon: Icon(Icons.bedtime_rounded,
+                          color: AppColors.accent),
+                      tooltip: 'Sleep timer on',
+                      onPressed: onSleep,
                     ),
                   // Episodes + lock (top-right). PiP/Sleep/Aspect/Snapshot moved
                   // to the ⋮ More sheet on the bottom row.
