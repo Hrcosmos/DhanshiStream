@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/di/injector.dart';
+import '../../../core/metadata/episode_metadata_service.dart';
 import '../../../core/metadata/metadata_enrichment.dart';
 import '../../../core/models/episode.dart';
 import '../../../core/models/media_detail.dart';
@@ -195,6 +196,25 @@ class DetailCubit extends Cubit<DetailState> {
           emit(state.copyWith(detail: d));
         }
       } catch (_) {/* stays a movie */}
+    }
+
+    // Fill in per-episode descriptions (AniZip for anime, TMDB season for a
+    // movie-source TV series). Best-effort — a miss leaves the row on its date.
+    if (d.episodes.isNotEmpty) {
+      try {
+        final enriched = await sl<EpisodeMetadataService>().enrich(
+          episodes: d.episodes,
+          type: d.type,
+          malId: d.malId,
+          tmdbId: d.tmdbId,
+          tmdbIsTv: d.tmdbIsTv,
+        );
+        if (isClosed) return;
+        if (!identical(enriched, d.episodes)) {
+          d = d.copyWith(episodes: enriched);
+          emit(state.copyWith(detail: d));
+        }
+      } catch (_) {/* keep episodes as-is */}
     }
 
     // Prefer id-based enrichment (AniList/TMDB) — it's richer: actor photos,

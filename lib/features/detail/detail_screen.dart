@@ -727,30 +727,24 @@ class _DetailViewState extends State<_DetailView>
       category: category,
       sourceId: widget.item.sourceId,
     );
-    final byS = <int, List<Episode>>{};
-    for (final e in d.episodes) {
-      (byS[seasonOf(e) ?? 1] ??= <Episode>[]).add(e);
-    }
-    if (byS.isEmpty) byS[1] = d.episodes;
-
-    // Best-effort per-episode descriptions. Prefer the cubit's resolved detail
-    // (it carries the promoted malId for movie-source anime); fall back to the
-    // source detail. Any miss leaves rows showing the air date, as before.
+    // Best-effort per-episode descriptions on a category switch. Prefer the
+    // cubit's resolved detail (promoted malId for movie-source anime).
+    var eps = d.episodes;
     if (mounted) {
       final cd = context.read<DetailCubit>().state.detail ?? d;
-      final svc = sl<EpisodeMetadataService>();
-      if (cd.type == ProviderType.anime && cd.malId != null) {
-        final ov = await svc.animeEpisodeOverviews(cd.malId!);
-        if (ov.isNotEmpty) {
-          byS.updateAll((s, eps) => mergeDescriptions(eps, ov));
-        }
-      } else if (cd.tmdbId != null && cd.tmdbIsTv) {
-        for (final s in byS.keys.toList()) {
-          final ov = await svc.tvEpisodeOverviews(cd.tmdbId!, s);
-          if (ov.isNotEmpty) byS[s] = mergeDescriptions(byS[s]!, ov);
-        }
-      }
+      eps = await sl<EpisodeMetadataService>().enrich(
+        episodes: eps,
+        type: cd.type,
+        malId: cd.malId,
+        tmdbId: cd.tmdbId,
+        tmdbIsTv: cd.tmdbIsTv,
+      );
     }
+    final byS = <int, List<Episode>>{};
+    for (final e in eps) {
+      (byS[seasonOf(e) ?? 1] ??= <Episode>[]).add(e);
+    }
+    if (byS.isEmpty) byS[1] = eps;
     return byS;
   }
 
@@ -2656,11 +2650,15 @@ class _EpisodeRow extends StatelessWidget {
         ? ep.thumbnail!
         : coverUrl;
 
-    // Prefer the episode synopsis (AniZip/TMDB, ~3 lines); fall back to the air
-    // date, as before, when there's no description.
-    final subline = (ep.description != null && ep.description!.trim().isNotEmpty)
+    // Air date stays as a small line next to the title; the episode synopsis
+    // (AniZip/TMDB, ~3 lines) spans full width below the row — under the image
+    // too, CloudStream-style.
+    final desc = (ep.description != null && ep.description!.trim().isNotEmpty)
         ? ep.description!.trim()
-        : (ep.date != null && ep.date!.trim().isNotEmpty ? ep.date!.trim() : null);
+        : null;
+    final dateLine = (ep.date != null && ep.date!.trim().isNotEmpty)
+        ? ep.date!.trim()
+        : null;
 
     final heading = displayTitle.isNotEmpty
         ? '$epNum. $displayTitle'
@@ -2765,14 +2763,14 @@ class _EpisodeRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (subline != null) ...[
+                      if (dateLine != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          subline,
+                          dateLine,
                           style: AppText.caption.copyWith(
                             color: AppColors.textSecondary,
                           ),
-                          maxLines: 3,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -2807,6 +2805,18 @@ class _EpisodeRow extends StatelessWidget {
                 ],
               ],
             ),
+            // Full-width synopsis under the whole row (under the image too).
+            if (desc != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                desc,
+                style: AppText.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
         ),
       ),

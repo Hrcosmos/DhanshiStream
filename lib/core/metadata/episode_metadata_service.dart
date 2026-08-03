@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/episode.dart';
+import '../models/provider_info.dart';
 
 /// Per-episode descriptions for the episode list. Best-effort: every method
 /// returns an empty map on any error/timeout and never throws. Anime uses
@@ -50,6 +51,44 @@ class EpisodeMetadataService {
     } catch (_) {
       return const {};
     }
+  }
+
+  /// Return [episodes] with descriptions filled in, best-effort. Anime (mal id)
+  /// matches by absolute episode number in one AniZip call; a movie-source TV
+  /// series (tmdb id + isTv) fetches each season and matches by number within
+  /// it. Anything else / any miss returns the episodes unchanged.
+  Future<List<Episode>> enrich({
+    required List<Episode> episodes,
+    required ProviderType type,
+    int? malId,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+  }) async {
+    if (episodes.isEmpty) return episodes;
+    if (type == ProviderType.anime && malId != null) {
+      return mergeDescriptions(episodes, await animeEpisodeOverviews(malId));
+    }
+    if (tmdbId != null && tmdbIsTv) {
+      final seasons = <int>{for (final e in episodes) e.season ?? 1};
+      final bySeason = <int, Map<int, String>>{};
+      for (final s in seasons) {
+        bySeason[s] = await tvEpisodeOverviews(tmdbId, s);
+      }
+      if (bySeason.values.every((m) => m.isEmpty)) return episodes;
+      return [
+        for (final e in episodes)
+          _withOverview(e, bySeason[e.season ?? 1] ?? const {}),
+      ];
+    }
+    return episodes;
+  }
+
+  static Episode _withOverview(Episode e, Map<int, String> byNumber) {
+    if (e.number != null && e.number! == e.number!.roundToDouble()) {
+      final ov = byNumber[e.number!.toInt()];
+      if (ov != null) return e.copyWith(description: ov);
+    }
+    return e;
   }
 
   /// AniZip: `{ episodes: { "1": { overview }, ... } }` -> {number: overview}.
