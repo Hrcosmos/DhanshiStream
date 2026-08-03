@@ -59,5 +59,15 @@ void main() {
       ], sort: SearchSort.titleAsc);
       expect(_order(state), ['fast', 'slow']); // arrival, not relevance
     });
+
+    test('the chip row matches the row order (best source first)', () {
+      final state = _state('one piece', [
+        _group('fast', 0, ['One Piece Film: Red']), // prefix
+        _group('slow', 1, ['One Piece']), // exact, arrived later
+      ]);
+      final chips = state.sourceChipGroups.map((g) => g.sourceId).toList();
+      expect(chips, ['slow', 'fast']); // same as _order(state)
+      expect(chips, _order(state));
+    });
   });
 }

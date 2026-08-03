@@ -275,10 +275,27 @@ class SearchState extends Equatable {
   /// row so it (and the selected chip) stays put even when a filter empties the
   /// current view — otherwise selecting a chip that yields nothing would hide
   /// the very chips you'd use to change or clear it.
-  List<SourceResultGroup> get sourceChipGroups => [
-    for (final g in groups)
-      if (_inEcosystem(g.sourceId) && g.items.isNotEmpty) g,
-  ];
+  ///
+  /// On the default Best-match sort the chips are ordered best-matching-source
+  /// first — the SAME order as [sortedVisibleGroups] — so the first chip lines
+  /// up with the top row. Ties keep arrival order; explicit sorts / empty query
+  /// keep pure arrival order.
+  List<SourceResultGroup> get sourceChipGroups {
+    final raw = [
+      for (final g in groups)
+        if (_inEcosystem(g.sourceId) && g.items.isNotEmpty) g,
+    ];
+    if (sort != SearchSort.bestMatch || query.trim().isEmpty) return raw;
+    final m = _queryMatch;
+    final score = {for (final g in raw) g.sourceId: _bestScore(g.items, m)};
+    // Decorate with the original (arrival) index so equal scores stay put.
+    final indexed = [for (var i = 0; i < raw.length; i++) (g: raw[i], i: i)];
+    indexed.sort((a, b) {
+      final c = score[b.g.sourceId]!.compareTo(score[a.g.sourceId]!);
+      return c != 0 ? c : a.i.compareTo(b.i);
+    });
+    return [for (final e in indexed) e.g];
+  }
 
   /// Per-source groups, each already filtered + sorted, ordered CloudStream-style
   /// by ARRIVAL: the source that returned results first sits at the top, slower
