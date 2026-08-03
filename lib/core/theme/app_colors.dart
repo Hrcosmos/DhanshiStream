@@ -14,6 +14,11 @@ abstract class AppColors {
   static Color bg = defaultBg;
   static Color surface = defaultSurface;
   static Color surface2 = defaultSurface2;
+
+  /// Settings card fill — a dark step just above [bg] (darker than [surface]),
+  /// so the card reads as a subtle dark container. Tune the 0.35 toward 0 for
+  /// even darker (closer to the background) or toward 1 for lighter.
+  static Color get settingsCard => Color.lerp(bg, surface, 0.5)!;
   static const textPrimary = Color(0xFFFFFFFF);
   static const textSecondary = Color(0xFFA7A7B2);
   static const textTertiary = Color(0xFF6E6E78);

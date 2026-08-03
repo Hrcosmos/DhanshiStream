@@ -46,6 +46,7 @@ import '../../core/theme/app_text.dart';
 import '../../core/update/update_service.dart';
 import '../update/update_dialog.dart';
 import '../../core/ui/settings_widgets.dart';
+import '../../core/ui/dock_visibility.dart';
 import 'developers_screen.dart';
 import 'donate_screen.dart';
 import '../auth/auth_cubit.dart';
@@ -58,6 +59,7 @@ import 'tracker_settings_screen.dart';
 import '../sources/source_health_screen.dart';
 import '../sources/sources_screen.dart';
 import 'settings_screen_tv.dart';
+import 'cubit/settings_cubit.dart';
 
 /// Top-level Settings screen — a grouped list of cards mirroring the
 /// iOS Settings look in our dark/coral language.
@@ -74,7 +76,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _dnsChoice = CsDns.off;
 
   final TextEditingController _searchCtrl = TextEditingController();
-  String _query = '';
+  // Search text + which section's sub-page is open. Held in a Cubit so the
+  // drill-down/search state is testable; the async prefs mirrors below
+  // (_dnsChoice/_betaUpdates) and subtitle refreshes stay local setState.
+  late final SettingsCubit _settingsCubit = SettingsCubit();
 
   final UpdateService _updateService = UpdateService();
   bool _betaUpdates = false;
@@ -95,6 +100,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _settingsCubit.close();
+    dockHiddenBySection.value = false; // never leave the dock stuck hidden
     super.dispose();
   }
 
@@ -357,11 +364,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Live "Search settings" field — filters every setting as you type
   /// (title, description and keyword synonyms), Samsung-style. A clear (×)
   /// button appears once there's a query.
-  Widget _searchField() => Padding(
+  Widget _searchField(String query) => Padding(
     padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
     child: Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.settingsCard,
         borderRadius: BorderRadius.circular(13),
       ),
       padding: const EdgeInsets.only(left: 14, right: 4),
@@ -372,7 +379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Expanded(
             child: TextField(
               controller: _searchCtrl,
-              onChanged: (v) => setState(() => _query = v.trim()),
+              onChanged: (v) => _settingsCubit.setQuery(v.trim()),
               style: AppText.body.copyWith(color: AppColors.textPrimary),
               cursorColor: AppColors.accent,
               textInputAction: TextInputAction.search,
@@ -385,12 +392,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          if (_query.isNotEmpty)
+          if (query.isNotEmpty)
             InkWell(
               borderRadius: BorderRadius.circular(20),
               onTap: () {
                 _searchCtrl.clear();
-                setState(() => _query = '');
+                _settingsCubit.setQuery('');
                 FocusScope.of(context).unfocus();
               },
               child: const Padding(
@@ -593,7 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       // Playback & downloads
       _SettingsEntry(
-        section: 'Playback & downloads',
+        section: 'Playback',
         icon: Icons.play_circle_outline,
         title: 'Playback',
         subtitle: 'Quality, autoplay, speed',
@@ -601,7 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _push(const PlaybackSettingsScreen()),
       ),
       _SettingsEntry(
-        section: 'Playback & downloads',
+        section: 'Playback',
         icon: Icons.history_rounded,
         title: 'History',
         subtitle: 'Shows you\'ve watched',
@@ -612,7 +619,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         },
       ),
       _SettingsEntry(
-        section: 'Playback & downloads',
+        section: 'Downloads',
         icon: Icons.download_outlined,
         title: 'Downloads',
         subtitle: 'Manage your downloaded episodes',
@@ -620,7 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _push(const DownloadsScreen()),
       ),
       _SettingsEntry(
-        section: 'Playback & downloads',
+        section: 'Downloads',
         icon: Icons.sd_storage_outlined,
         title: 'Storage',
         subtitle: 'Manage space used by the app',
@@ -628,7 +635,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _push(const StorageSettingsScreen()),
       ),
       _SettingsEntry(
-        section: 'Playback & downloads',
+        section: 'Downloads',
         icon: Icons.downloading_outlined,
         title: 'Torrents',
         subtitle: 'Streaming & data settings',
@@ -637,7 +644,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       // Interface & notifications
       _SettingsEntry(
-        section: 'Interface & notifications',
+        section: 'Interface',
         icon: Icons.palette_outlined,
         title: 'Appearance',
         subtitle: 'Accent colour',
@@ -662,7 +669,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _push(const AppearanceScreen()),
       ),
       _SettingsEntry(
-        section: 'Interface & notifications',
+        section: 'Interface',
         icon: Icons.grid_view_rounded,
         title: 'Search layout',
         subtitle: 'How cross-source results are shown',
@@ -672,7 +679,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       if (Platform.isAndroid)
         _SettingsEntry(
-          section: 'Interface & notifications',
+          section: 'Notifications',
           icon: Icons.notifications_none_rounded,
           title: 'Notifications',
           subtitle: 'New-episode alerts for subscribed shows',
@@ -793,30 +800,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // edge, leaving a dead band on both sides of the capsule.
       body: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              // Bottom: clear the floating dock (its height arrives as
-              // MediaQuery bottom padding thanks to extendBody).
-              padding: EdgeInsets.only(
-                bottom: 24 + MediaQuery.paddingOf(context).bottom,
-              ),
-              sliver: SliverList.list(
-                children: [
-                  // Big "Settings." title — tight to the top (right under the
-                  // status bar), scrolls away with the content.
+        child: BlocConsumer<SettingsCubit, SettingsState>(
+          bloc: _settingsCubit,
+          // Hide the shell's floating dock while a section sub-page is open, so
+          // it reads as a full page. The shell also gates on the active tab.
+          listener: (context, s) =>
+              dockHiddenBySection.value = s.openSection != null,
+          builder: (context, s) {
+            final section = s.openSection;
+            final query = s.query;
+            final children = <Widget>[];
+            if (section != null) {
+              // Drill-down: a back header, then just this section's rows
+              // (lead row accent-tinted).
+              final items =
+                  entries.where((e) => e.section == section).toList();
+              children
+                ..add(_sectionHeader(section))
+                ..add(
+                  SettingsCard(
+                    children: [
+                      for (var i = 0; i < items.length; i++)
+                        items[i].toTile(iconAccent: i == 0),
+                    ],
+                  ),
+                );
+            } else {
+              children
+                ..add(
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
                     child: _settingsWordmark(size: 30),
                   ),
-                  _searchField(),
-                  // Account row only in the un-filtered (browse) view.
-                  if (_query.isEmpty) _accountCard(context),
-                  ..._buildSettingsList(entries),
-                ],
+                )
+                ..add(_searchField(query));
+              if (query.isEmpty) {
+                // Browse view: account row + one tappable row per section.
+                children
+                  ..add(_accountCard(context))
+                  ..addAll(_categoryRows(entries));
+              } else {
+                // Search cuts across every section (unchanged behaviour).
+                children.addAll(_buildSettingsList(entries, query));
+              }
+            }
+            return PopScope(
+              // Top level with no search → back leaves Settings. Otherwise
+              // intercept: a section backs out to the categories, a search
+              // clears first.
+              canPop: section == null && query.isEmpty,
+              onPopInvokedWithResult: (didPop, _) {
+                if (didPop) return;
+                if (section != null) {
+                  _settingsCubit.back();
+                } else if (query.isNotEmpty) {
+                  _searchCtrl.clear();
+                  _settingsCubit.setQuery('');
+                  FocusScope.of(context).unfocus();
+                }
+              },
+              // Slide the drill-down in like a real pushed page (matching the
+              // native transition you get opening e.g. Providers). Keyed by
+              // which "page" is showing so the switcher animates category↔section
+              // but NOT search-as-you-type (both are the same '_root' key).
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(1, 0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                ),
+                child: CustomScrollView(
+                  key: ValueKey(section ?? '_root'),
+                  slivers: [
+                    SliverPadding(
+                      // Bottom: clear the floating dock (its height arrives as
+                      // MediaQuery bottom padding thanks to extendBody).
+                      padding: EdgeInsets.only(
+                        bottom: 24 + MediaQuery.paddingOf(context).bottom,
+                      ),
+                      sliver: SliverList.list(children: children),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -825,8 +901,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _sectionOrder = <String>[
     'Account & sync',
     'Sources',
-    'Playback & downloads',
-    'Interface & notifications',
+    'Playback',
+    'Downloads',
+    'Interface',
+    'Notifications',
     'Advanced',
     'About',
   ];
@@ -834,8 +912,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Renders [entries] grouped by section. When there's a query, only matching
   /// entries survive; sections that end up empty are dropped, and an empty
   /// result shows a "no matches" line.
-  List<Widget> _buildSettingsList(List<_SettingsEntry> entries) {
-    final q = _query.toLowerCase();
+  List<Widget> _buildSettingsList(List<_SettingsEntry> entries, String query) {
+    final q = query.toLowerCase();
     final out = <Widget>[];
     var first = true;
     for (final section in _sectionOrder) {
@@ -845,7 +923,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (items.isEmpty) continue;
       out.add(SettingsSectionLabel(section, first: first));
       first = false;
-      out.add(SettingsCard(children: [for (final e in items) e.toTile()]));
+      out.add(
+        SettingsCard(
+          children: [
+            for (var i = 0; i < items.length; i++)
+              items[i].toTile(iconAccent: i == 0),
+          ],
+        ),
+      );
     }
     if (out.isEmpty) {
       out.add(
@@ -863,6 +948,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     return out;
   }
+
+  /// One tappable row per section (browse view). Each drills into the section's
+  /// sub-page. Built from the same [entries], so counts/conditionals stay in
+  /// sync — an empty section (e.g. all-Android entries on iOS) is skipped.
+  List<Widget> _categoryRows(List<_SettingsEntry> entries) {
+    final tiles = <Widget>[];
+    for (final section in _sectionOrder) {
+      final count = entries.where((e) => e.section == section).length;
+      if (count == 0) continue;
+      tiles.add(
+        SettingsTile(
+          icon: _sectionIcon(section),
+          title: section,
+          subtitle: _sectionSummary(section),
+          iconAccent: tiles.isEmpty, // accent the lead row
+          onTap: () => _settingsCubit.open(section),
+        ),
+      );
+    }
+    return [SettingsCard(children: tiles)];
+  }
+
+  /// Compact app-bar-style header for a section sub-page: a small back chevron
+  /// + an 18px title with a hairline underneath (replaces the oversized title).
+  Widget _sectionHeader(String section) => Padding(
+    padding: const EdgeInsets.fromLTRB(6, 4, 16, 0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.textPrimary,
+                size: 18,
+              ),
+              onPressed: _settingsCubit.back,
+            ),
+            const SizedBox(width: 2),
+            Expanded(
+              child: Text(
+                section,
+                style: AppText.headline.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Divider(height: 1, thickness: 1, color: AppColors.hairline),
+        const SizedBox(height: 14),
+      ],
+    ),
+  );
+
+  IconData _sectionIcon(String section) => switch (section) {
+    'Account & sync' => Icons.person_outline_rounded,
+    'Sources' => Icons.dns_rounded,
+    'Playback' => Icons.play_circle_outline_rounded,
+    'Downloads' => Icons.download_outlined,
+    'Interface' => Icons.tune_rounded,
+    'Notifications' => Icons.notifications_none_rounded,
+    'Advanced' => Icons.build_outlined,
+    'About' => Icons.info_outline_rounded,
+    _ => Icons.settings_outlined,
+  };
+
+  String _sectionSummary(String section) => switch (section) {
+    'Account & sync' => 'Sign in, trackers, Discord, backup',
+    'Sources' => 'Providers, active source, updates',
+    'Playback' => 'Quality, autoplay, speed, history',
+    'Downloads' => 'Downloads, storage, torrents',
+    'Interface' => 'Appearance, search layout',
+    'Notifications' => 'New-episode alerts',
+    'Advanced' => 'DNS, privacy, logs',
+    'About' => 'Updates, support, version',
+    _ => '',
+  };
 
   /// "Settings" with a coral "." — used both big (the scroll-away title) and
   /// small (the centered nav-bar title that fades in on collapse).
@@ -930,13 +1099,14 @@ class _SettingsEntry {
   bool matches(String q) =>
       '$title ${subtitle ?? ''} $keywords $section'.toLowerCase().contains(q);
 
-  SettingsTile toTile() => SettingsTile(
+  SettingsTile toTile({bool iconAccent = false}) => SettingsTile(
     icon: icon,
     title: title,
     subtitle: subtitle,
     trailing: trailing,
     onTap: onTap,
     subtitleMaxLines: subtitleMaxLines,
+    iconAccent: iconAccent,
   );
 }
 
@@ -1517,7 +1687,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text('Playback', style: AppText.title)),
+      appBar: settingsAppBar('Playback'),
       body: ListView(
         padding: const EdgeInsets.only(top: 4, bottom: 28),
         children: [
@@ -2014,7 +2184,7 @@ class StorageSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text('Storage', style: AppText.title)),
+      appBar: settingsAppBar('Storage'),
       body: ListView(
         padding: const EdgeInsets.only(top: 8),
         children: [
@@ -2059,11 +2229,7 @@ class AboutSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: Text('About', style: AppText.title),
-        centerTitle: true,
-      ),
+      appBar: settingsAppBar('About'),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(0, 28, 0, 28),
         children: [
@@ -2153,10 +2319,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
     ];
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: const Text('Connections'),
-      ),
+      appBar: settingsAppBar('Connections'),
       body: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 24),
         children: [
@@ -2325,10 +2488,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: const Text('Privacy'),
-      ),
+      appBar: settingsAppBar('Privacy'),
       body: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 24),
         children: [

@@ -10,6 +10,7 @@ import 'package:watch_app/core/anilist/anilist_service.dart';
 import 'package:watch_app/core/app_mode.dart';
 import 'package:watch_app/core/appwrite/appwrite_service.dart';
 import 'package:watch_app/core/download/download_prefs.dart';
+import 'package:watch_app/core/playback/playback_prefs.dart';
 import 'package:watch_app/core/playback/search_prefs.dart';
 import 'package:watch_app/core/torrent/torrent_prefs.dart';
 import 'package:watch_app/core/provider/provider_registry.dart';
@@ -88,6 +89,7 @@ void main() {
     await Hive.openBox(DownloadPrefs.boxName);
     await Hive.openBox(TorrentPrefs.boxName);
     await Hive.openBox(ThemeController.boxName);
+    await Hive.openBox(PlaybackPrefs.boxName);
     final sl = GetIt.instance;
     sl
       ..registerSingleton<AppMode>(AppMode(isTv: false))
@@ -96,6 +98,7 @@ void main() {
       ..registerSingleton<AniListService>(_StubAniList())
       ..registerSingleton<MalService>(_StubMal())
       ..registerSingleton<SimklService>(_StubSimkl())
+      ..registerSingleton<PlaybackPrefs>(PlaybackPrefs())
       ..registerSingleton<DownloadPrefs>(DownloadPrefs())
       ..registerSingleton<TorrentPrefs>(TorrentPrefs());
     activeCubit = ActiveSourceCubit();
@@ -108,14 +111,13 @@ void main() {
     if (_hiveDir.existsSync()) await _hiveDir.delete(recursive: true);
   });
 
-  testWidgets('Settings renders labeled sections with every tile grouped',
-      (tester) async {
+  Future<void> _pumpSettings(WidgetTester tester) async {
     _mockPathProvider(tester);
-    // Tall surface so the lazy ListView builds every section.
-    await tester.binding.setSurfaceSize(const Size(1000, 3000));
+    await tester.binding.setSurfaceSize(const Size(1000, 2200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final authCubit = AuthCubit(SupabaseService(), AppwriteService(), _fakeBridge());
+    final authCubit =
+        AuthCubit(SupabaseService(), AppwriteService(), _fakeBridge());
     addTearDown(authCubit.close);
     GetIt.instance.registerSingleton<AuthCubit>(authCubit);
 
@@ -128,43 +130,60 @@ void main() {
         child: const MaterialApp(home: SettingsScreen()),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
+  }
 
-    // The new section labels (SettingsSectionLabel renders them uppercase).
-    for (final label in [
-      'ACCOUNT & SYNC',
-      'SOURCES',
-      'PLAYBACK & DOWNLOADS',
-      'MORE',
-    ]) {
-      expect(find.text(label), findsOneWidget, reason: 'label: $label');
-    }
-    // The Notifications section is Android-only — absent on the test host.
-    expect(find.text('NOTIFICATIONS'), findsNothing);
-    expect(find.text('Notifications'), findsNothing);
+  testWidgets('top level shows one tappable row per section, not the tiles',
+      (tester) async {
+    await _pumpSettings(tester);
 
-    // Every cross-platform tile still renders exactly once.
-    for (final t in [
-      'Watch Party',
-      'Backup & Restore',
-      'Connections',
-      'Discord',
-      'Providers',
-      'Active source',
-      'Source health',
+    // Each section is now a single drill-down row.
+    for (final section in const [
+      'Account & sync',
+      'Sources',
       'Playback',
-      'Storage',
-      'Download location',
-      'Torrents',
-      'Search layout',
-      'How it works',
-      'Privacy',
-      'Check for updates',
-      'Support the app',
-      'Developers',
+      'Downloads',
+      'Interface',
+      'Advanced',
       'About',
     ]) {
+      expect(find.text(section), findsOneWidget, reason: 'category: $section');
+    }
+    // Notifications is Android-only (its sole entry), so its category is absent
+    // on the non-Android test host.
+    expect(find.text('Notifications'), findsNothing);
+    // The individual settings live INSIDE their section now, not up top.
+    expect(find.text('Providers'), findsNothing);
+    expect(find.text('Storage'), findsNothing);
+    expect(find.text('Backup & Restore'), findsNothing);
+  });
+
+  testWidgets('tapping a category drills into its settings', (tester) async {
+    await _pumpSettings(tester);
+
+    await tester.tap(find.text('Sources'));
+    await tester.pumpAndSettle();
+
+    // The Sources section's tiles are now on screen.
+    for (final t in const ['Providers', 'Active source', 'Source health']) {
       expect(find.text(t), findsOneWidget, reason: 'tile: $t');
     }
+    // Other sections' rows are gone (we're on the Sources sub-page).
+    expect(find.text('Downloads'), findsNothing);
+    expect(find.text('About'), findsNothing);
+  });
+
+  testWidgets('search cuts across every section (flat filtered list)',
+      (tester) async {
+    await _pumpSettings(tester);
+
+    await tester.enterText(find.byType(TextField), 'backup');
+    await tester.pumpAndSettle();
+
+    // The matching tile surfaces regardless of its section…
+    expect(find.text('Backup & Restore'), findsOneWidget);
+    // …and non-matching tiles/categories are filtered out.
+    expect(find.text('Providers'), findsNothing);
+    expect(find.text('Sources'), findsNothing);
   });
 }

@@ -14,6 +14,7 @@ import '../home/search_screen.dart';
 import '../schedule/schedule_screen.dart';
 import '../settings/settings_screen.dart';
 import 'dock_icons.dart';
+import '../../core/ui/dock_visibility.dart';
 import 'root_shell_tv.dart';
 
 /// The four pages used by both [RootShell] (phone bottom nav) and
@@ -131,9 +132,23 @@ class _RootShellState extends State<RootShell>
           child: IndexedStack(index: _index, children: _pages()),
         ),
       ),
-      bottomNavigationBar: _FloatingDock(
-        index: _index,
-        onSelected: _onTabSelected,
+      bottomNavigationBar: ValueListenableBuilder<bool>(
+        valueListenable: dockHiddenBySection,
+        builder: (context, sectionOpen, _) {
+          // Slide the dock away only when a Settings section is open AND the
+          // Settings (Profile, last) tab is the one showing — every other tab
+          // keeps its dock.
+          final hide = sectionOpen && _index == 4;
+          return AnimatedSlide(
+            offset: hide ? const Offset(0, 1.6) : Offset.zero,
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            child: IgnorePointer(
+              ignoring: hide,
+              child: _FloatingDock(index: _index, onSelected: _onTabSelected),
+            ),
+          );
+        },
       ),
     );
   }

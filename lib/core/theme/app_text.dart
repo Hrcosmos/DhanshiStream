@@ -27,6 +27,11 @@ abstract class AppText {
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
   );
+
+  /// Compact app-bar title for settings-family screens — matches the settings
+  /// section header so drilling deeper keeps one header size.
+  static final barTitle =
+      headline.copyWith(fontSize: 18, fontWeight: FontWeight.w700);
   static const body = TextStyle(
     fontFamily: _f,
     fontSize: 15,

@@ -3,9 +3,25 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 
-/// One Material-You list row. Sits directly on the background (no card box):
-/// a roomy leading line icon + title with an optional description under it +
-/// trailing chevron / switch / value. Set [destructive] for the danger tint.
+/// Compact, flat app bar for pushed settings screens — an 18px title with a
+/// bottom hairline, matching the in-tab section header so drilling deeper keeps
+/// the same header. Inherits the transparent/flat [AppBarTheme].
+PreferredSizeWidget settingsAppBar(String title, {List<Widget>? actions}) {
+  return AppBar(
+    titleSpacing: 4,
+    title: Text(title, style: AppText.barTitle),
+    actions: actions,
+    bottom: const PreferredSize(
+      preferredSize: Size.fromHeight(1),
+      child: Divider(height: 1, thickness: 1, color: AppColors.hairline),
+    ),
+  );
+}
+
+/// One settings list row inside a [SettingsCard]: a rounded tinted icon tile +
+/// title with an optional description under it + trailing chevron / switch /
+/// value. Set [destructive] for the danger tint, or [iconAccent] to tint the
+/// icon tile with the accent (used for a card's lead row).
 class SettingsTile extends StatelessWidget {
   const SettingsTile({
     super.key,
@@ -16,6 +32,7 @@ class SettingsTile extends StatelessWidget {
     this.onTap,
     this.destructive = false,
     this.subtitleMaxLines = 1,
+    this.iconAccent = false,
   });
 
   final IconData icon;
@@ -34,9 +51,13 @@ class SettingsTile extends StatelessWidget {
   /// Renders the icon + title in the coral danger tint.
   final bool destructive;
 
+  /// Accent-tint the icon tile (a card's lead row).
+  final bool iconAccent;
+
   @override
   Widget build(BuildContext context) {
     final fg = destructive ? AppColors.accent : null;
+    final accented = destructive || iconAccent;
     final trailingWidget =
         trailing ??
         (onTap == null
@@ -51,12 +72,27 @@ class SettingsTile extends StatelessWidget {
       splashColor: AppColors.accent.withValues(alpha: 0.08),
       highlightColor: AppColors.accent.withValues(alpha: 0.04),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
         child: Row(
           children: [
-            // Roomy monochrome line icon, muted grey (M3 leading icon).
-            Icon(icon, color: fg ?? AppColors.textSecondary, size: 23),
-            const SizedBox(width: 18),
+            // Icon in a rounded tinted tile — accent on a lead/destructive row.
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accented
+                    ? AppColors.accent.withValues(alpha: 0.14)
+                    : Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: accented ? AppColors.accent : AppColors.textSecondary,
+                size: 19,
+              ),
+            ),
+            const SizedBox(width: 14),
             // Title + description stacked, so the trailing widget always lands
             // cleanly on the right regardless of subtitle length.
             Expanded(
@@ -68,7 +104,7 @@ class SettingsTile extends StatelessWidget {
                     title,
                     style: AppText.headline.copyWith(
                       color: fg ?? AppColors.textPrimary,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                       fontSize: 15.5,
                     ),
                     maxLines: 1,
@@ -80,6 +116,7 @@ class SettingsTile extends StatelessWidget {
                       subtitle!,
                       style: AppText.caption.copyWith(
                         color: AppColors.textSecondary,
+                        fontSize: 12.8,
                       ),
                       maxLines: subtitleMaxLines,
                       overflow: subtitleMaxLines == null
@@ -91,7 +128,7 @@ class SettingsTile extends StatelessWidget {
               ),
             ),
             if (trailingWidget != null) ...[
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               trailingWidget,
             ],
           ],
@@ -101,8 +138,9 @@ class SettingsTile extends StatelessWidget {
   }
 }
 
-/// Stacks the rows of one category. No box, no border, no dividers — rows just
-/// sit on the background; category separation comes from [SettingsSectionLabel].
+/// Groups its rows into one rounded surface card with inset hairline dividers
+/// between them (iOS-grouped style). Category separation comes from the
+/// [SettingsSectionLabel] above it.
 class SettingsCard extends StatelessWidget {
   const SettingsCard({super.key, required this.children, this.margin});
 
@@ -111,48 +149,54 @@ class SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) {
+        rows.add(
+          const Padding(
+            // Inset past the 34px icon tile so the divider starts at the text.
+            padding: EdgeInsets.only(left: 63),
+            child: Divider(height: 1, thickness: 1, color: AppColors.hairline),
+          ),
+        );
+      }
+      rows.add(children[i]);
+    }
     return Container(
-      margin: margin ?? EdgeInsets.zero,
-      child: Column(mainAxisSize: MainAxisSize.min, children: children),
+      margin: margin ?? const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        // Dark card fill; icon tiles use a light overlay to still read on it.
+        color: AppColors.settingsCard,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: rows),
     );
   }
 }
 
-/// Material-You category header: an accent-coloured label, preceded by a full
-/// hairline (except the [first] one) that visually separates the groups.
+/// Material-You category header: a small uppercase accent label above a
+/// [SettingsCard]. No divider — the boxed cards separate the groups.
 class SettingsSectionLabel extends StatelessWidget {
   const SettingsSectionLabel(this.label, {super.key, this.first = false});
   final String label;
 
-  /// The topmost section: no divider above it, tighter top padding.
+  /// The topmost section: tighter top padding.
   final bool first;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (!first) ...[
-          const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 22),
-            child: Divider(height: 1, thickness: 1, color: AppColors.hairline),
-          ),
-        ],
-        Padding(
-          padding: EdgeInsets.fromLTRB(22, first ? 6 : 18, 22, 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-              color: AppColors.accent,
-            ),
-          ),
-        ),
-      ],
+    return Padding(
+      padding: EdgeInsets.fromLTRB(28, first ? 4 : 22, 22, 9),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          fontFamily: 'Inter',
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+        ).copyWith(color: AppColors.accent),
+      ),
     );
   }
 }
