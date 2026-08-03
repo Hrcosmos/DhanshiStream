@@ -162,6 +162,8 @@ class DetailScreen extends StatelessWidget {
         url: item.url,
         sourceId: item.sourceId,
         prefs: sl<TitlePrefsStore>(),
+        seedMalId: item.malId,
+        seedType: item.type,
       )..load(),
       child: _DetailView(item: item),
     );

@@ -86,6 +86,8 @@ class DetailCubit extends Cubit<DetailState> {
     required String url,
     String? sourceId,
     TitlePrefsStore? prefs,
+    int? seedMalId,
+    ProviderType? seedType,
   }) : _repo = repo,
        _url = url,
        _sourceId = sourceId,
@@ -99,7 +101,16 @@ class DetailCubit extends Cubit<DetailState> {
                (prefs ?? sl<TitlePrefsStore>()).category(sourceId ?? '', url) ??
                'sub',
          ),
-       );
+       ) {
+    // Prefetch episode metadata using the MAL id we already know from the
+    // tapped item, so the AniZip call overlaps the detail fetch and episodes
+    // render already-enriched instead of popping in ~0.3s later. Fire-and-
+    // forget; the service dedupes this against the enrichment call and never
+    // throws. Id-less titles (no seed id) just enrich after load, as before.
+    if (seedType == ProviderType.anime && seedMalId != null) {
+      sl<EpisodeMetadataService>().animeEpisodeMeta(seedMalId);
+    }
+  }
 
   final SourceRepository _repo;
   final String _url;

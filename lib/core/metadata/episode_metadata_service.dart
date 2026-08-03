@@ -32,10 +32,25 @@ class EpisodeMetadataService {
 
   final Map<int, Map<int, EpisodeMeta>> _animeCache = {};
   final Map<String, Map<int, EpisodeMeta>> _tvCache = {};
+  // In-flight requests, so a prefetch (fired at tap time) and the later
+  // enrichment call share ONE request instead of hitting the network twice.
+  final Map<int, Future<Map<int, EpisodeMeta>>> _animeInflight = {};
+  final Map<String, Future<Map<int, EpisodeMeta>>> _tvInflight = {};
 
-  Future<Map<int, EpisodeMeta>> animeEpisodeMeta(int malId) async {
+  /// Fetch (or prefetch) anime episode metadata by MAL id. Cached in memory +
+  /// on disk; concurrent callers share the in-flight request. Fire-and-forget
+  /// safe — never throws.
+  Future<Map<int, EpisodeMeta>> animeEpisodeMeta(int malId) {
     final memo = _animeCache[malId];
-    if (memo != null) return memo;
+    if (memo != null) return Future.value(memo);
+    return _animeInflight.putIfAbsent(malId, () {
+      final f = _fetchAnime(malId);
+      f.whenComplete(() => _animeInflight.remove(malId));
+      return f;
+    });
+  }
+
+  Future<Map<int, EpisodeMeta>> _fetchAnime(int malId) async {
     final disk = await _readDisk('a:$malId');
     if (disk != null) return _animeCache[malId] = parseAniZip(disk);
     try {
@@ -53,10 +68,22 @@ class EpisodeMetadataService {
     }
   }
 
-  Future<Map<int, EpisodeMeta>> tvEpisodeMeta(int tmdbId, int season) async {
+  Future<Map<int, EpisodeMeta>> tvEpisodeMeta(int tmdbId, int season) {
     final key = '$tmdbId:$season';
     final memo = _tvCache[key];
-    if (memo != null) return memo;
+    if (memo != null) return Future.value(memo);
+    return _tvInflight.putIfAbsent(key, () {
+      final f = _fetchTv(tmdbId, season, key);
+      f.whenComplete(() => _tvInflight.remove(key));
+      return f;
+    });
+  }
+
+  Future<Map<int, EpisodeMeta>> _fetchTv(
+    int tmdbId,
+    int season,
+    String key,
+  ) async {
     final disk = await _readDisk('t:$key');
     if (disk != null) return _tvCache[key] = parseTmdbSeason(disk);
     try {
