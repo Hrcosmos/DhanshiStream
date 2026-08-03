@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
 import '../../core/discord/discord_rpc.dart';
+import '../../core/metadata/episode_metadata_service.dart';
 import '../../core/metadata/metadata_enrichment.dart';
 import '../../core/notify/cs_notify.dart';
 import '../../core/notify/notification_service.dart';
@@ -731,6 +732,25 @@ class _DetailViewState extends State<_DetailView>
       (byS[seasonOf(e) ?? 1] ??= <Episode>[]).add(e);
     }
     if (byS.isEmpty) byS[1] = d.episodes;
+
+    // Best-effort per-episode descriptions. Prefer the cubit's resolved detail
+    // (it carries the promoted malId for movie-source anime); fall back to the
+    // source detail. Any miss leaves rows showing the air date, as before.
+    if (mounted) {
+      final cd = context.read<DetailCubit>().state.detail ?? d;
+      final svc = sl<EpisodeMetadataService>();
+      if (cd.type == ProviderType.anime && cd.malId != null) {
+        final ov = await svc.animeEpisodeOverviews(cd.malId!);
+        if (ov.isNotEmpty) {
+          byS.updateAll((s, eps) => mergeDescriptions(eps, ov));
+        }
+      } else if (cd.tmdbId != null && cd.tmdbIsTv) {
+        for (final s in byS.keys.toList()) {
+          final ov = await svc.tvEpisodeOverviews(cd.tmdbId!, s);
+          if (ov.isNotEmpty) byS[s] = mergeDescriptions(byS[s]!, ov);
+        }
+      }
+    }
     return byS;
   }
 

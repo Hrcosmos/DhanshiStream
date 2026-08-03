@@ -37,6 +37,7 @@ import '../repository/provider_settings_repository.dart';
 import '../repository/source_repository.dart';
 import '../state/active_source_cubit.dart';
 import '../theme/theme_controller.dart';
+import '../metadata/episode_metadata_service.dart';
 import '../metadata/metadata_enrichment.dart';
 import '../metadata/people_service.dart';
 import '../metadata/tmdb.dart';
@@ -254,6 +255,10 @@ Future<void> initDependencies() async {
   // enrichment's searches authenticate; AniList now 403s anonymous API calls.
   sl.registerSingleton<MetadataEnrichment>(
       MetadataEnrichment(dio, () => sl<AniListService>().store.token));
+
+  // Per-episode descriptions for the episode list (AniZip for anime, TMDB
+  // season for movie-source TV series). Best-effort; shares the TMDB-keyed dio.
+  sl.registerSingleton<EpisodeMetadataService>(EpisodeMetadataService(dio));
 
   // Person pages (characters + voice actors/staff from AniList, movie/TV people
   // from TMDB), opened from the Detail screen's Cast tab.
