@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -321,12 +322,53 @@ class ProfileScreen extends StatelessWidget {
     }
   }
 
+  /// Rename dialog → AuthCubit.updateName (writes display_name to the profile
+  /// + auth metadata). No-op if unchanged/blank; a snackbar surfaces failure.
+  Future<void> _editName(BuildContext context, String current) async {
+    final ctrl = TextEditingController(text: current);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit name'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.done,
+          maxLength: 40,
+          decoration: const InputDecoration(hintText: 'Your name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == current || !context.mounted) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await context.read<AuthCubit>().updateName(name);
+    if (!ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text("Couldn't update your name")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (sl<AppMode>().isTv) return const ProfileScreenTv();
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text('Profile', style: AppText.title)),
+      appBar: settingsAppBar('Profile'),
       body: BlocBuilder<AuthCubit, AuthState>(
         builder: (context, state) {
           if (!state.isLoggedIn) {
@@ -375,7 +417,33 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              Center(child: Text(state.displayName, style: AppText.title)),
+              Center(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _editName(context, state.displayName),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            state.displayName,
+                            style: AppText.title,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        const Icon(
+                          Icons.edit_rounded,
+                          size: 15,
+                          color: AppColors.textTertiary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 4),
               Center(child: Text(state.user?.email ?? '', style: AppText.caption)),
               const SizedBox(height: 32),
