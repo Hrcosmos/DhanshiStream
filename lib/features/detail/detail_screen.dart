@@ -2656,11 +2656,11 @@ class _EpisodeRow extends StatelessWidget {
         ? ep.thumbnail!
         : coverUrl;
 
-    // Air date as a muted detail line (our model has no per-episode synopsis or
-    // runtime; show the date when present, omit otherwise — no invented data).
-    final subline = (ep.date != null && ep.date!.trim().isNotEmpty)
-        ? ep.date!.trim()
-        : null;
+    // Prefer the episode synopsis (AniZip/TMDB, ~3 lines); fall back to the air
+    // date, as before, when there's no description.
+    final subline = (ep.description != null && ep.description!.trim().isNotEmpty)
+        ? ep.description!.trim()
+        : (ep.date != null && ep.date!.trim().isNotEmpty ? ep.date!.trim() : null);
 
     final heading = displayTitle.isNotEmpty
         ? '$epNum. $displayTitle'
@@ -2772,6 +2772,8 @@ class _EpisodeRow extends StatelessWidget {
                           style: AppText.caption.copyWith(
                             color: AppColors.textSecondary,
                           ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                       if (isResume || filler) ...[
