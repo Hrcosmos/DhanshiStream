@@ -25,6 +25,11 @@ class Episode extends Equatable {
   @JsonKey(includeFromJson: false, includeToJson: false)
   final int? season;
 
+  /// Per-episode synopsis (AniZip/TMDB); null when unknown. Not serialized —
+  /// episodes are always fetched fresh, like [season].
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? description;
+
   const Episode({
     required this.id,
     required this.title,
@@ -34,13 +39,26 @@ class Episode extends Equatable {
     this.thumbnail,
     this.filler = false,
     this.season,
+    this.description,
   });
 
   factory Episode.fromJson(Map<String, dynamic> json) =>
       _$EpisodeFromJson(json);
   Map<String, dynamic> toJson() => _$EpisodeToJson(this);
 
+  Episode copyWith({String? description}) => Episode(
+        id: id,
+        title: title,
+        number: number,
+        url: url,
+        date: date,
+        thumbnail: thumbnail,
+        filler: filler,
+        season: season,
+        description: description ?? this.description,
+      );
+
   @override
   List<Object?> get props =>
-      [id, title, number, url, date, thumbnail, filler, season];
+      [id, title, number, url, date, thumbnail, filler, season, description];
 }
