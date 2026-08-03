@@ -2656,9 +2656,14 @@ class _EpisodeRow extends StatelessWidget {
     final desc = (ep.description != null && ep.description!.trim().isNotEmpty)
         ? ep.description!.trim()
         : null;
-    final dateLine = (ep.date != null && ep.date!.trim().isNotEmpty)
-        ? ep.date!.trim()
-        : null;
+    // Runtime · rating · air date — a single line, only the parts we have.
+    // Runtime + rating come first (compact, most useful); the longer date drops
+    // to the ellipsis first when the row is narrow.
+    final metaLine = [
+      if (ep.runtimeMinutes != null) '${ep.runtimeMinutes} min',
+      if (ep.rating != null) '★ ${ep.rating!.toStringAsFixed(1)}',
+      if (ep.date != null && ep.date!.trim().isNotEmpty) ep.date!.trim(),
+    ].join('  ·  ');
 
     // Prefer the real AniZip/TMDB title when the source only gave a generic
     // "Episode N" (or nothing); keep the source's own title when it has a real
@@ -2775,10 +2780,10 @@ class _EpisodeRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (dateLine != null) ...[
+                      if (metaLine.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          dateLine,
+                          metaLine,
                           style: AppText.caption.copyWith(
                             color: AppColors.textSecondary,
                           ),

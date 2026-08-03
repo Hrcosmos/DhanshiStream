@@ -35,6 +35,13 @@ class Episode extends Equatable {
   @JsonKey(includeFromJson: false, includeToJson: false)
   final String? metaTitle;
 
+  /// Per-episode rating (0–10, AniZip/TMDB) and runtime in minutes. Not
+  /// serialized — filled fresh on each detail load, like [description].
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final double? rating;
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final int? runtimeMinutes;
+
   const Episode({
     required this.id,
     required this.title,
@@ -46,23 +53,34 @@ class Episode extends Equatable {
     this.season,
     this.description,
     this.metaTitle,
+    this.rating,
+    this.runtimeMinutes,
   });
 
   factory Episode.fromJson(Map<String, dynamic> json) =>
       _$EpisodeFromJson(json);
   Map<String, dynamic> toJson() => _$EpisodeToJson(this);
 
-  Episode copyWith({String? description, String? metaTitle}) => Episode(
+  Episode copyWith({
+    String? description,
+    String? metaTitle,
+    String? thumbnail,
+    String? date,
+    double? rating,
+    int? runtimeMinutes,
+  }) => Episode(
         id: id,
         title: title,
         number: number,
         url: url,
-        date: date,
-        thumbnail: thumbnail,
+        date: date ?? this.date,
+        thumbnail: thumbnail ?? this.thumbnail,
         filler: filler,
         season: season,
         description: description ?? this.description,
         metaTitle: metaTitle ?? this.metaTitle,
+        rating: rating ?? this.rating,
+        runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
       );
 
   @override
@@ -77,5 +95,7 @@ class Episode extends Equatable {
         season,
         description,
         metaTitle,
+        rating,
+        runtimeMinutes,
       ];
 }
