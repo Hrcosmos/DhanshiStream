@@ -53,8 +53,42 @@ class SourceRepository {
   final Map<String, ({DateTime at, List<VideoSource> sources})> _resolved = {};
   static const Duration _resolvedTtl = Duration(minutes: 20);
 
+  /// Search result cache (opt-in via [searchStatus]'s `cache` flag) + in-flight
+  /// dedup, so a repeat search or a scope/filter toggle doesn't re-hit every
+  /// source. Keyed PER SOURCE (id + query + category + filters), so a newly
+  /// added source is never in the cache — it's always searched live. A short TTL
+  /// bounds staleness for an updated same-id source, and [syncSearchCache] wipes
+  /// the whole cache the moment the loaded-source set changes (add/remove/
+  /// enable/disable). Only successful outcomes (ok/empty) are cached — a
+  /// transient error/timeout is never remembered, so a failed source retries.
+  final Map<String, ({DateTime at, List<MediaItem> items, SourceOutcome outcome})>
+  _searchCache = {};
+  final Map<String, Future<({List<MediaItem> items, SourceOutcome outcome})>>
+  _searchInflight = {};
+  static const Duration _searchTtl = Duration(minutes: 3);
+  String _searchSourcesSig = '';
+
   String _prefetchKey(String url, String? sourceId) =>
       '${sourceId ?? _active.state}|$url';
+
+  String _searchKey(
+    String sourceId,
+    String query,
+    String category,
+    String? filtersJson,
+  ) => '$sourceId|${query.trim().toLowerCase()}|$category|${filtersJson ?? ''}';
+
+  /// Drop the search cache when the set of loaded sources changed since the last
+  /// call (a source was added, removed, or enabled/disabled) — so cached results
+  /// never outlive a source-list change. Cheap; call once before a search batch.
+  void syncSearchCache() {
+    final sig = loadedSources.map((s) => s.id).join(',');
+    if (sig != _searchSourcesSig) {
+      _searchCache.clear();
+      _searchInflight.clear();
+      _searchSourcesSig = sig;
+    }
+  }
 
   /// True for CloudStream source ids (`cs:<name>`), which route to the native
   /// plugin host instead of the JS runtime.
@@ -242,7 +276,51 @@ class SourceRepository {
   /// CF suppression is reused automatically: JS search goes through the
   /// provider-manager `search` path (suppresses the solver) and CS search goes
   /// through native `searchStatus` (bumps `CfClearance.searchDepth`).
+  /// [cache] opts this call into the short-TTL search cache + in-flight dedup
+  /// (see [_searchCache]). Off by default so probes/tests and filter-apply always
+  /// hit the network fresh; the cross-source search fan-out passes `cache: true`.
   Future<({List<MediaItem> items, SourceOutcome outcome})> searchStatus(
+    String query, {
+    String category = 'sub',
+    String? sourceId,
+    String? filtersJson,
+    bool cache = false,
+  }) {
+    final resolved = sourceId ?? _active.state;
+    if (!cache) {
+      return _searchStatusUncached(
+        query,
+        category: category,
+        sourceId: resolved,
+        filtersJson: filtersJson,
+      );
+    }
+    final key = _searchKey(resolved, query, category, filtersJson);
+    final hit = _searchCache[key];
+    if (hit != null && DateTime.now().difference(hit.at) < _searchTtl) {
+      return Future.value((items: hit.items, outcome: hit.outcome));
+    }
+    final inflight = _searchInflight[key];
+    if (inflight != null) return inflight; // share an already-running fetch
+    final future = _searchStatusUncached(
+      query,
+      category: category,
+      sourceId: resolved,
+      filtersJson: filtersJson,
+    ).then((res) {
+      // Cache only successful outcomes so a transient failure isn't remembered.
+      if (res.outcome == SourceOutcome.ok ||
+          res.outcome == SourceOutcome.empty) {
+        _searchCache[key] = (at: DateTime.now(), items: res.items, outcome: res.outcome);
+      }
+      return res;
+    });
+    _searchInflight[key] = future;
+    future.whenComplete(() => _searchInflight.remove(key));
+    return future;
+  }
+
+  Future<({List<MediaItem> items, SourceOutcome outcome})> _searchStatusUncached(
     String query, {
     String category = 'sub',
     String? sourceId,

@@ -439,16 +439,22 @@ class _SearchViewState extends State<_SearchView> {
                   p.contentFilter != c.contentFilter ||
                   p.genreFilter != c.genreFilter ||
                   p.decadeFilter != c.decadeFilter ||
+                  p.ecosystem != c.ecosystem ||
                   p.suggestions != c.suggestions ||
                   p.status != c.status,
               builder: (context, state) {
                 final showingSuggestions =
                     state.status != SearchStatus.success &&
                     state.suggestions.isNotEmpty;
+                // Keep the row while a source chip is selected, so a selection
+                // that filters down to nothing doesn't also hide the chips
+                // needed to undo it. Base "enough sources to filter" on the
+                // sources that RETURNED results, not the content-filtered view.
+                final hasSelection = state.sourceFilter != kAllSources;
                 if (state.currentSourceOnly ||
                     showingSuggestions ||
                     state.status != SearchStatus.success ||
-                    state.visibleGroups.length < 2) {
+                    (state.sourceChipGroups.length < 2 && !hasSelection)) {
                   return const SizedBox.shrink();
                 }
                 return _filterChips(state);
@@ -852,7 +858,10 @@ class _SearchViewState extends State<_SearchView> {
 
   // ── Source filter chips ───────────────────────────────────────────────────
   Widget _filterChips(SearchState state) {
-    final groups = state.visibleGroups;
+    // Chip per source that RETURNED results (not the content-filtered view), so
+    // the selected chip and "All" stay tappable even when a filter empties the
+    // current results. Each chip's count still reflects the active filters.
+    final groups = state.sourceChipGroups;
     return SizedBox(
       height: 36,
       child: ListView(

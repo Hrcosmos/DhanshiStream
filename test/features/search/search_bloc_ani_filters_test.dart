@@ -84,6 +84,7 @@ class _FakeRepo implements SourceRepository {
     String category = 'sub',
     String? sourceId,
     String? filtersJson,
+    bool cache = false,
   }) async {
     capturedSourceId = sourceId;
     capturedFiltersJson = filtersJson;
@@ -103,6 +104,12 @@ class _FakeRepo implements SourceRepository {
   String get sourceId => 'ani:1';
 
   // ── Everything else — never called in these tests ─────────────────────────
+
+  // Any SourceRepository member not overridden here is never exercised by
+  // these tests; route it to a clear failure so the fake doesn't have to track
+  // every member the interface grows.
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 
   @override
   bool hasSource(String sourceId) => throw UnimplementedError();

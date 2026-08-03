@@ -332,6 +332,11 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
       );
     }
 
+    // Wipe the search cache if the loaded-source set changed since last time, so
+    // a newly added/removed source is reflected immediately (per-source keying
+    // already keeps a new source out of the cache; this covers removes too).
+    _repo.syncSearchCache();
+
     final acc = <SourceResultGroup>[];
     var anyError = false;
     // Monotonic arrival counter: the Nth source to return non-empty results gets
@@ -346,6 +351,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
             q,
             sourceId: s.id,
             filtersJson: state.aniFiltersBySource[s.id],
+            cache: true,
           );
           sw.stop();
           if (isClosed || gen != _runGen) return; // superseded/closed
