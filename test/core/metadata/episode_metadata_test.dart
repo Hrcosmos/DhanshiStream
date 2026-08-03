@@ -3,26 +3,43 @@ import 'package:watch_app/core/metadata/episode_metadata_service.dart';
 import 'package:watch_app/core/models/episode.dart';
 
 void main() {
-  test('copyWith sets description and preserves other fields', () {
+  test('copyWith sets description + metaTitle, preserves other fields', () {
     const e = Episode(id: 'a', title: 'Ep', number: 1, url: 'u', season: 2);
-    final e2 = e.copyWith(description: 'A synopsis.');
+    final e2 = e.copyWith(description: 'A synopsis.', metaTitle: 'Real Title');
     expect(e2.description, 'A synopsis.');
+    expect(e2.metaTitle, 'Real Title');
     expect(e2.id, 'a');
     expect(e2.number, 1);
     expect(e2.season, 2);
     expect(e.description, isNull); // original untouched
+    expect(e.metaTitle, isNull);
   });
 
   group('parseAniZip', () {
-    test('maps episode number -> overview, drops empty', () {
+    test('maps number -> title+overview, drops empty', () {
       final m = EpisodeMetadataService.parseAniZip({
         'episodes': {
-          '1': {'overview': 'First ep.'},
-          '2': {'overview': '   '},
-          '3': {'overview': 'Third ep.'},
+          '1': {
+            'title': {'en': 'The Start', 'x-jat': 'Hajimari'},
+            'overview': 'First ep.',
+          },
+          '2': {'overview': '   '}, // blank overview, no title -> dropped
+          '3': {'overview': 'Third ep.'}, // overview only
         }
       });
-      expect(m, {1: 'First ep.', 3: 'Third ep.'});
+      expect(m[1], (title: 'The Start', overview: 'First ep.'));
+      expect(m.containsKey(2), isFalse);
+      expect(m[3], (title: null, overview: 'Third ep.'));
+    });
+    test('title-only episode is kept', () {
+      final m = EpisodeMetadataService.parseAniZip({
+        'episodes': {
+          '1': {
+            'title': {'en': 'Named'},
+          },
+        }
+      });
+      expect(m[1], (title: 'Named', overview: null));
     });
     test('non-map / missing episodes -> empty', () {
       expect(EpisodeMetadataService.parseAniZip(null), isEmpty);
@@ -31,36 +48,46 @@ void main() {
   });
 
   group('parseTmdbSeason', () {
-    test('maps episode_number -> overview, drops empty', () {
+    test('maps episode_number -> name+overview, drops empty', () {
       final m = EpisodeMetadataService.parseTmdbSeason({
         'episodes': [
-          {'episode_number': 1, 'overview': 'Pilot.'},
-          {'episode_number': 2, 'overview': ''},
-          {'episode_number': 3, 'overview': 'Third.'},
+          {'episode_number': 1, 'name': 'Pilot', 'overview': 'Pilot ep.'},
+          {'episode_number': 2, 'name': '', 'overview': ''}, // both blank
+          {'episode_number': 3, 'name': 'Third', 'overview': 'Third.'},
         ]
       });
-      expect(m, {1: 'Pilot.', 3: 'Third.'});
+      expect(m[1], (title: 'Pilot', overview: 'Pilot ep.'));
+      expect(m.containsKey(2), isFalse);
+      expect(m[3], (title: 'Third', overview: 'Third.'));
     });
   });
 
-  group('mergeDescriptions', () {
+  group('mergeMeta', () {
     const eps = [
       Episode(id: '1', title: 'A', number: 1, url: 'u1'),
       Episode(id: '2', title: 'B', number: 2, url: 'u2'),
       Episode(id: '3', title: 'C', number: 3, url: 'u3'),
     ];
-    test('sets description on matching episode numbers', () {
-      final out = mergeDescriptions(eps, {1: 'one', 3: 'three'});
+    final byNum = <int, EpisodeMeta>{
+      1: (title: 'One', overview: 'one'),
+      3: (title: null, overview: 'three'),
+    };
+
+    test('sets title + description on matching episode numbers', () {
+      final out = mergeMeta(
+        eps,
+        (e) => byNum[e.number?.toInt()],
+      );
+      expect(out[0].metaTitle, 'One');
       expect(out[0].description, 'one');
-      expect(out[1].description, isNull); // no match
+      expect(out[1].metaTitle, isNull); // no match
+      expect(out[1].description, isNull);
+      expect(out[2].metaTitle, isNull); // overview-only match
       expect(out[2].description, 'three');
     });
-    test('empty map returns the same list', () {
-      expect(identical(mergeDescriptions(eps, const {}), eps), isTrue);
-    });
-    test('non-integer / null numbers are skipped', () {
-      const e = [Episode(id: 'x', title: 'X', number: 1.5, url: 'u')];
-      expect(mergeDescriptions(e, {1: 'one'})[0].description, isNull);
+
+    test('no matches returns the same list instance', () {
+      expect(identical(mergeMeta(eps, (_) => null), eps), isTrue);
     });
   });
 }
