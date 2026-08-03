@@ -78,7 +78,7 @@ class _ZPhoneViewState extends State<_ZPhoneView> {
         child: Scaffold(
           backgroundColor: AppColors.bg,
           appBar: AppBar(
-            title: Text('Zangetsu providers', style: AppText.title),
+            title: Text('Zangetsu providers', style: AppText.barTitle),
             bottom: TabBar(
               indicatorColor: AppColors.accent,
               indicatorSize: TabBarIndicatorSize.label,

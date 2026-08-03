@@ -160,7 +160,7 @@ class _AniScreenPhoneViewState extends State<_AniScreenPhoneView> {
       child: Scaffold(
         backgroundColor: AppColors.bg,
         appBar: AppBar(
-          title: Text('Aniyomi', style: AppText.title),
+          title: Text('Aniyomi', style: AppText.barTitle),
           bottom: TabBar(
             indicatorColor: AppColors.accent,
             indicatorSize: TabBarIndicatorSize.label,

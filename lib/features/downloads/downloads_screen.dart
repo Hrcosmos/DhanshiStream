@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
@@ -242,8 +243,8 @@ class _DownloadsScreenState extends State<DownloadsScreen>
     final manager = sl<DownloadManager>();
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        title: Text('Downloads', style: AppText.title),
+      appBar: settingsAppBar(
+        'Downloads',
         actions: [
           IconButton(
             tooltip: 'Download settings',

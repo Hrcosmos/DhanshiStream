@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 
 import '../../core/announce/announcement.dart';
 import '../../core/app_mode.dart';
@@ -81,8 +82,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     final empty = subs.isEmpty && announcements.isEmpty;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        title: Text('Notifications', style: AppText.title),
+      appBar: settingsAppBar(
+        'Notifications',
         actions: [
           if (subs.isNotEmpty)
             IconButton(

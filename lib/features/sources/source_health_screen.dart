@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 
 import '../../core/di/injector.dart';
 import '../../core/playback/search_source_prefs.dart';
@@ -137,9 +138,8 @@ class _SourceHealthScreenState extends State<SourceHealthScreen> {
     final done = _results.where((r) => !r.running).length;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: Text('Source health', style: AppText.title),
+      appBar: settingsAppBar(
+        'Source health',
         actions: [
           IconButton(
             tooltip: 'Re-test',

@@ -315,10 +315,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: Text('Backup & Restore', style: AppText.title),
-      ),
+      appBar: settingsAppBar('Backup & Restore'),
       body: Stack(
         children: [
           ListView(

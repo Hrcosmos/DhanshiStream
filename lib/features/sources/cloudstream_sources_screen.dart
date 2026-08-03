@@ -76,7 +76,7 @@ class _CsPhoneViewState extends State<_CsPhoneView> {
       child: Scaffold(
         backgroundColor: AppColors.bg,
         appBar: AppBar(
-          title: Text('CloudStream', style: AppText.title),
+          title: Text('CloudStream', style: AppText.barTitle),
           bottom: TabBar(
             indicatorColor: AppColors.accent,
             indicatorSize: TabBarIndicatorSize.label,

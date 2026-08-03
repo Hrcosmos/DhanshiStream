@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -62,11 +63,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     final presets = ThemeController.accentPresets;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        elevation: 0,
-        title: Text('Appearance', style: AppText.title),
-      ),
+      appBar: settingsAppBar('Appearance'),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
@@ -116,7 +117,7 @@ class _HubPhoneView extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: Text('Providers', style: AppText.title)),
+      appBar: settingsAppBar('Providers'),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         children: [

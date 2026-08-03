@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -51,11 +52,7 @@ class DonateScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: Text('Support', style: AppText.title),
-        centerTitle: true,
-      ),
+      appBar: settingsAppBar('Support'),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
         children: [

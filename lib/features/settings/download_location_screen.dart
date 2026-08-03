@@ -42,10 +42,7 @@ class _DownloadLocationScreenState extends State<DownloadLocationScreen> {
     final prefs = sl<DownloadPrefs>();
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        title: Text('Download location', style: AppText.title),
-      ),
+      appBar: settingsAppBar('Download location'),
       body: ListView(
         padding: const EdgeInsets.only(top: 4, bottom: 28),
         children: [

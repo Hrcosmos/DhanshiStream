@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../core/ui/settings_widgets.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../../core/theme/app_text.dart';
 
 /// Logs into Discord in a WebView and captures the user token (so the Gateway
 /// can set Rich Presence). Pops with the token string, or null if cancelled.
@@ -174,8 +174,8 @@ class _DiscordLoginScreenState extends State<DiscordLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Connect Discord', style: AppText.title),
+      appBar: settingsAppBar(
+        'Connect Discord',
         actions: [
           TextButton(
             onPressed: _pasteManually,
