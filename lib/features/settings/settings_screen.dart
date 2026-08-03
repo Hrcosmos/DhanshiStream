@@ -575,6 +575,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ),
+      _SettingsEntry(
+        section: 'Sources',
+        icon: Icons.autorenew_rounded,
+        title: 'Auto-update extensions',
+        subtitle: 'Update installed sources automatically on launch',
+        keywords:
+            'auto update extensions sources plugins automatic upgrade cloudstream aniyomi',
+        trailing: Switch.adaptive(
+          value: sl<PlaybackPrefs>().autoUpdateExtensions,
+          activeThumbColor: AppColors.accent,
+          onChanged: (v) async {
+            await sl<PlaybackPrefs>().setAutoUpdateExtensions(v);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
       // Playback & downloads
       _SettingsEntry(
         section: 'Playback & downloads',

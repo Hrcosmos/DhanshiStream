@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
 import '../../core/notify/notification_service.dart';
+import '../../core/update/extension_auto_updater.dart';
 import '../../core/provider/cloudstream_provider.dart';
 import '../../core/provider/provider_manager.dart';
 import '../../core/models/home_section.dart';
@@ -112,9 +113,33 @@ class _HomeViewState extends State<_HomeView> {
   /// so it never competes with first content load, and fully guarded so it can
   /// NEVER affect startup or playback.
   Future<void> _checkSourceUpdates() async {
-    if (!Platform.isAndroid) return;
+    final prefs = sl<PlaybackPrefs>();
+    final autoUpdate = prefs.autoUpdateExtensions;
+    // The read-only notify path below is Android-only; keep that gate unless
+    // we're auto-updating (JS providers auto-update on any platform).
+    if (!autoUpdate && !Platform.isAndroid) return;
     await Future<void>.delayed(const Duration(seconds: 4));
     if (!mounted) return;
+
+    // Auto-update path: apply updates across all ecosystems, throttled to
+    // ~once a day across launches. Best-effort — never touches startup.
+    if (autoUpdate) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      const dayMs = 24 * 60 * 60 * 1000;
+      if (now - prefs.lastExtensionUpdateMs < dayMs) return;
+      await prefs.setLastExtensionUpdateMs(now);
+      final updated = await ExtensionAutoUpdater.run();
+      if (updated > 0) {
+        await NotificationService.instance.showMessage(
+          id: 779100,
+          title: 'Extensions updated',
+          body:
+              '$updated extension${updated == 1 ? '' : 's'} updated to the latest version.',
+        );
+      }
+      return;
+    }
+
     try {
       final csManager = sl<CloudStreamManager>();
       final csCount = await csManager.checkAllUpdates();
