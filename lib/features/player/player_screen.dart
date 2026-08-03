@@ -569,7 +569,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       // playing fine. Only a genuine launch failure (not installed / no
       // activity) falls back to the built-in player.
       if (res.launched) {
-        Navigator.of(context).maybePop();
+        _leavePlayer();
       } else {
         _initInApp(); // not installed / no activity → built-in
         setState(() {});
@@ -608,7 +608,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ),
       ),
     );
-    if (mounted) Navigator.of(context).maybePop();
+    _leavePlayer();
   }
 
   String? _episodeLabelOrNull() {
@@ -753,7 +753,67 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 'from Settings → Add CloudStream repository, or ask the host to use a '
                 'built-in source.');
     } else {
-      Navigator.of(context).maybePop();
+      _leavePlayer();
+    }
+  }
+
+  // Last back press for the "double back to exit" close mode.
+  DateTime? _lastBackPress;
+
+  // Imperative "leave the player now". Uses pop() (not maybePop) so it slips
+  // past the close-confirmation PopScope — for programmatic exits (external /
+  // DRM handoff, load failure) and once the user has confirmed a close.
+  void _leavePlayer() {
+    if (!mounted) return;
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.pop();
+  }
+
+  // A user-initiated close (back button, system back, cast-panel back). Applies
+  // the Settings → Playback → Close confirmation choice: 'direct' never reaches
+  // here (PopScope lets it pop straight through); 'confirm' asks first;
+  // 'double_back' (default) needs a second back within 2s.
+  Future<void> _handleCloseRequest() async {
+    switch (sl<PlaybackPrefs>().closeConfirmation) {
+      case 'confirm':
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Close video?'),
+            content: const Text('Are you sure you want to close the video?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        if (ok == true) _leavePlayer();
+      case 'direct':
+        _leavePlayer();
+      default: // 'double_back'
+        final now = DateTime.now();
+        if (_lastBackPress != null &&
+            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          _leavePlayer();
+          return;
+        }
+        _lastBackPress = now;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
     }
   }
 
@@ -2478,7 +2538,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: scaffold,
       );
     }
-    return scaffold;
+    // Phone: guard the close with the user's Close-confirmation setting.
+    // 'direct' pops straight through (canPop true); the other two are vetoed
+    // and routed to _handleCloseRequest. This catches the back button, the
+    // system/gesture back, and the cast-panel back — all of which maybePop().
+    return PopScope(
+      canPop: sl<PlaybackPrefs>().closeConfirmation == 'direct',
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleCloseRequest();
+      },
+      child: scaffold,
+    );
   }
 }
 
