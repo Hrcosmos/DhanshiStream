@@ -303,13 +303,56 @@ class SearchState extends Equatable {
     return _sortItems(base);
   }
 
-  /// Applies [sort] to a list of items. Best-match preserves source order;
+  /// Relevance of [item] to the current [query], 0–100 (higher = better match).
+  /// Scores the query against BOTH the source title and the English title and
+  /// keeps the best: exact normalized match wins, then prefix, then substring,
+  /// then the fraction of query words present. Non-Latin queries normalise to
+  /// empty and score 0 (source order preserved), so they're never reshuffled.
+  double _relevanceScore(MediaItem item) {
+    final q = normalizeTitle(query);
+    if (q.isEmpty) return 0;
+    final tokens = query
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    double scoreOf(String? cand) {
+      if (cand == null) return 0;
+      final t = normalizeTitle(cand);
+      if (t.isEmpty) return 0;
+      if (t == q) return 100; // exact
+      if (t.startsWith(q)) return 80; // prefix
+      if (t.contains(q)) return 60; // substring
+      if (tokens.isEmpty) return 0;
+      final matched = tokens.where(t.contains).length;
+      if (matched == tokens.length) return 40; // all words present
+      return matched / tokens.length * 30; // partial word overlap
+    }
+
+    final a = scoreOf(item.title);
+    final b = scoreOf(item.englishTitle);
+    return a > b ? a : b;
+  }
+
+  /// Applies [sort] to a list of items. Best-match ranks by query relevance;
   /// newest/rating fall back to title order for items lacking the data so the
   /// list stays stable rather than reshuffling unparseable items to the bottom.
   List<MediaItem> _sortItems(List<MediaItem> items) {
     switch (sort) {
       case SearchSort.bestMatch:
-        return items;
+        // Rank by how well each title matches the query, keeping the source's
+        // own order on ties (source order is itself a relevance signal). An
+        // empty query leaves the list untouched.
+        if (query.trim().isEmpty) return items;
+        final scored = [
+          for (var i = 0; i < items.length; i++)
+            (item: items[i], index: i, score: _relevanceScore(items[i])),
+        ];
+        scored.sort((a, b) {
+          final c = b.score.compareTo(a.score);
+          return c != 0 ? c : a.index.compareTo(b.index);
+        });
+        return [for (final s in scored) s.item];
       case SearchSort.titleAsc:
         return items..sort(
           (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
