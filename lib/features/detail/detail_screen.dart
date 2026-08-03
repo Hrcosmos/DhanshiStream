@@ -2658,12 +2658,10 @@ class _EpisodeRow extends StatelessWidget {
     final desc = (ep.description != null && ep.description!.trim().isNotEmpty)
         ? ep.description!.trim()
         : null;
-    // Runtime · rating · air date — a single line, only the parts we have.
-    // Runtime + rating come first (compact, most useful); the longer date drops
-    // to the ellipsis first when the row is narrow.
+    // Runtime · air date. The rating now rides as a chip on the thumbnail
+    // (always fully visible) instead of getting clipped on this cramped line.
     final metaLine = [
       if (ep.runtimeMinutes != null) '${ep.runtimeMinutes} min',
-      if (ep.rating != null) '★ ${ep.rating!.toStringAsFixed(1)}',
       if (ep.date != null && ep.date!.trim().isNotEmpty) ep.date!.trim(),
     ].join('  ·  ');
 
@@ -2752,6 +2750,46 @@ class _EpisodeRow extends StatelessWidget {
                                 size: 16,
                               ),
                             ),
+                          // Rating chip — top-left so it never overlaps the
+                          // watched check (top-right); always fully visible,
+                          // unlike the old inline "★ 8.0" that got clipped.
+                          if (ep.rating != null)
+                            Positioned(
+                              top: 4,
+                              left: 4,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xB3000000),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.star_rounded,
+                                        color: Color(0xFFFFC107),
+                                        size: 11,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        ep.rating!.toStringAsFixed(1),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.1,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           if (isInProgress)
                             Positioned(
                               left: 0,
@@ -2831,6 +2869,8 @@ class _EpisodeRow extends StatelessWidget {
                 desc,
                 style: AppText.caption.copyWith(
                   color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                  height: 1.4,
                 ),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
