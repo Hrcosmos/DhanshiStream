@@ -524,9 +524,12 @@ _ReaderTheme _readerTheme(String theme) {
 /// `<i>`/`<em>` become bold/italic spans, everything else (including
 /// `<script>`/`<style>` and their contents) is stripped.
 List<TextSpan> novelSpans(String html, TextStyle base) {
+  // `(?:</\1>|$)` (not just `</\1>`) so an unclosed <script>/<style> tag
+  // still gets its raw content stripped through end-of-string instead of
+  // leaking into the rendered chapter.
   final cleaned = html.replaceAll(
     RegExp(
-      r'<(script|style)[^>]*>.*?</\1>',
+      r'<(script|style)[^>]*>.*?(?:</\1>|$)',
       caseSensitive: false,
       dotAll: true,
     ),
@@ -602,19 +605,35 @@ const Map<String, String> _htmlEntities = {
 };
 
 /// Decodes the handful of HTML entities real scraped chapter text actually
-/// contains (named + numeric). Anything unrecognised is left as-is.
+/// contains (named + numeric). Anything unrecognised — including a numeric
+/// reference outside the valid Unicode code point range (`&#99999999;`,
+/// which a source with odd markup can genuinely contain) — is left as-is
+/// rather than crashing: [String.fromCharCode] throws a [RangeError] outside
+/// 0..0x10FFFF, and this runs synchronously from `build()`, well outside the
+/// try/catch that only guards the network fetch in `_load()`.
+///
+/// Lone UTF-16 surrogates (0xD800-0xDFFF) are deliberately NOT special-cased:
+/// `String.fromCharCode` doesn't throw for them (confirmed), it just renders
+/// as tofu — a display quirk, not a crash, so out of scope for this guard.
 String _unescapeHtml(String s) {
   if (!s.contains('&')) return s;
-  return s.replaceAllMapped(RegExp(r'&(#x?[0-9a-fA-F]+|[a-zA-Z]+);'), (m) {
+  return s.replaceAllMapped(RegExp(r'&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);'), (
+    m,
+  ) {
     final ref = m.group(1)!;
-    if (ref.startsWith('#x') || ref.startsWith('#X')) {
+    if (ref.startsWith('#x')) {
       final code = int.tryParse(ref.substring(2), radix: 16);
-      return code == null ? m.group(0)! : String.fromCharCode(code);
+      return _charOrRaw(code, m.group(0)!);
     }
     if (ref.startsWith('#')) {
       final code = int.tryParse(ref.substring(1));
-      return code == null ? m.group(0)! : String.fromCharCode(code);
+      return _charOrRaw(code, m.group(0)!);
     }
     return _htmlEntities[ref] ?? m.group(0)!;
   });
+}
+
+String _charOrRaw(int? code, String raw) {
+  if (code == null || code < 0 || code > 0x10FFFF) return raw;
+  return String.fromCharCode(code);
 }

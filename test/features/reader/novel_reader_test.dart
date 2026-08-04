@@ -83,6 +83,66 @@ class _FakeReadingProvider implements BaseProvider, ReadingProvider {
       ChapterText(html: '<p>${textByUrl[chapterUrl] ?? 'missing'}</p>');
 }
 
+/// A reading source whose `getText` throws on the first call and succeeds on
+/// every call after — for the error/retry path.
+class _FlakyReadingProvider implements BaseProvider, ReadingProvider {
+  _FlakyReadingProvider(this.sourceId, this.text);
+
+  @override
+  final String sourceId;
+  final String text;
+  int calls = 0;
+
+  @override
+  String get displayName => sourceId;
+
+  @override
+  Future<ProviderInfo> getInfo() => throw UnimplementedError();
+
+  @override
+  Future<List<HomeSection>?> getHome({String category = 'sub'}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<MediaItem>> popular({
+    String category = 'sub',
+    int dateRange = 7,
+    int page = 1,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<List<MediaItem>> search(
+    String query,
+    int page, {
+    String category = '',
+  }) => throw UnimplementedError();
+
+  @override
+  Future<MediaDetail> getDetail(String url, {String category = 'sub'}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<Episode>> getEpisodes(String url, {String category = 'sub'}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<VideoSource>> getVideoSources(
+    String episodeUrl, {
+    bool fast = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<List<PageImage>> getPages(String chapterUrl) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ChapterText> getText(String chapterUrl) async {
+    calls++;
+    if (calls == 1) throw Exception('network blip');
+    return ChapterText(html: '<p>$text</p>');
+  }
+}
+
 /// Records every `flush` value passed to [ReadHistory.save] (synchronously,
 /// before delegating to the real implementation) so the carry-forward
 /// requirement — flush on chapter change + on dispose — is provable without
@@ -124,11 +184,52 @@ void main() {
       expect(text, isNot(contains('x'))); // script stripped
       expect(spans.any((s) => s.style?.fontWeight == FontWeight.bold), isTrue);
     });
+
+    test('named and numeric entities decode', () {
+      final spans = novelSpans(
+        '<p>Rock &amp; Roll &mdash; it&#39;s &#x2019;90s &ndash; forever</p>',
+        const TextStyle(),
+      );
+      final text = spans.map((s) => s.toPlainText()).join();
+      expect(text, contains('Rock & Roll'));
+      expect(text, contains('—')); // &mdash;
+      expect(text, contains("it's")); // &#39;
+      expect(text, contains('’90s')); // &#x2019;
+      expect(text, contains('–')); // &ndash;
+    });
+
+    // Regression pin for the reviewer-found crash: String.fromCharCode
+    // throws RangeError outside 0..0x10FFFF, and novelSpans runs
+    // synchronously from build() — outside the only try/catch in the file
+    // (which just guards the network fetch in _load()). A source returning
+    // an out-of-range numeric reference must not crash the reader.
+    test('a malformed/out-of-range numeric entity does not throw and is left '
+        'as raw text', () {
+      expect(
+        () => novelSpans('<p>Before &#99999999; after</p>', const TextStyle()),
+        returnsNormally,
+      );
+      final spans = novelSpans(
+        '<p>Before &#99999999; after</p>',
+        const TextStyle(),
+      );
+      final text = spans.map((s) => s.toPlainText()).join();
+      expect(text, contains('Before'));
+      expect(text, contains('after'));
+      expect(text, contains('&#99999999;')); // left unrecognised, as-is
+    });
   });
 
   group('NovelReaderScreen', () {
     late Directory dir;
     late _SpyReadHistory spyHistory;
+    // Exposed so individual tests can swap the registered fake provider
+    // in-place (AniyomiManager.register replaces by sourceId) instead of
+    // building a second ProviderManager — each one spins up its own QuickJS
+    // runtime with an internal periodic timer that's never disposed, and a
+    // second one constructed inside a testWidgets body (FakeAsync zone)
+    // trips the "pending timer" end-of-test invariant.
+    late AniyomiManager ani;
 
     setUp(() async {
       dir = await Directory.systemTemp.createTemp('novel_reader_test');
@@ -144,7 +245,7 @@ void main() {
       sl.registerSingleton<ReadHistory>(spyHistory);
       sl.registerSingleton<ReaderPrefs>(ReaderPrefs());
 
-      final ani = AniyomiManager();
+      ani = AniyomiManager();
       ani.register(
         _FakeReadingProvider('ani:n', {
           'u1': 'chapter one text',
@@ -241,6 +342,86 @@ void main() {
 
       final flushesAfterDispose = spyHistory.flushCalls.where((f) => f).length;
       expect(flushesAfterDispose, greaterThan(flushesAfterChapterChange));
+    });
+
+    testWidgets(
+      'a chapterText failure shows the error state (not a crash, not a '
+      'stuck spinner), and Retry re-fetches successfully',
+      (tester) async {
+        // Swap in a source that fails once then succeeds, in place of the
+        // shared setUp's always-succeeding fake — replaces the 'ani:n' entry
+        // on the same AniyomiManager/SourceRepository setUp already built.
+        ani.register(_FlakyReadingProvider('ani:n', 'chapter one text'));
+
+        await tester.pumpWidget(harness());
+        await tester.pumpAndSettle();
+
+        expect(find.text('Retry'), findsOneWidget);
+        expect(find.textContaining('chapter one text'), findsNothing);
+
+        await tester.tap(find.text('Retry'));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('chapter one text'), findsOneWidget);
+        expect(find.text('Retry'), findsNothing);
+
+        // Dispose under runAsync — same reason as the tests above.
+        await tester.runAsync(() async {
+          await tester.pumpWidget(const SizedBox());
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+      },
+    );
+
+    testWidgets('reopening a chapter restores its saved scroll permille', (
+      tester,
+    ) async {
+      // A long chapter so it actually scrolls in the test viewport, so the
+      // restore has something non-trivial to prove.
+      final longText = List.generate(
+        120,
+        (i) => 'Paragraph number $i with enough words to take real space.',
+      ).join('</p><p>');
+      // Same reasoning as the error/retry test: replace the fake in-place on
+      // the existing AniyomiManager rather than building a second
+      // ProviderManager.
+      ani.register(_FakeReadingProvider('ani:n', {'u1': longText}));
+      // Pre-seed a saved position: 50% scrolled. Real Hive I/O awaited
+      // directly (not fire-and-forget like the production code), so it
+      // needs runAsync too — a plain await inside testWidgets' FakeAsync
+      // zone never resolves a real dart:io completion.
+      await tester.runAsync(
+        () => sl<ReadStore>().save('ani:n', 'b1', 'c1', pos: 500, total: 1000),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NovelReaderScreen(
+            sourceId: 'ani:n',
+            showId: 'b1',
+            showTitle: 'Book',
+            cover: null,
+            chapters: [chapter('c1', 'u1')],
+            startIndex: 0,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final scrollView = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      final controller = scrollView.controller!;
+      final maxExtent = controller.position.maxScrollExtent;
+      expect(maxExtent, greaterThan(0)); // sanity: the chapter actually scrolls
+
+      final expectedOffset = 0.5 * maxExtent; // 500 / 1000 permille
+      expect(controller.offset, closeTo(expectedOffset, 1.0));
+
+      await tester.runAsync(() async {
+        await tester.pumpWidget(const SizedBox());
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
     });
   });
 }
