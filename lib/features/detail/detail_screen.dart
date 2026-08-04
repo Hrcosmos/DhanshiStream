@@ -535,9 +535,16 @@ class _DetailViewState extends State<_DetailView>
     // Reading types never touch the player — route to the reader instead.
     // Both tap paths (Play button + episode-row onTap) call this same
     // function, so gating it here covers both in one place. Safety-critical:
-    // a manga/novel title must never try to resolve video sources.
+    // a manga/novel title must never try to resolve video sources. Checks
+    // BOTH the loaded detail's type and the search-result item's type —
+    // provider JSON isn't normalized, so a source that disagrees between the
+    // two still can't reach the player.
     final t = detail.type;
-    if (t == ProviderType.novel || t == ProviderType.manga) {
+    final it = widget.item.type;
+    if (t == ProviderType.novel ||
+        t == ProviderType.manga ||
+        it == ProviderType.novel ||
+        it == ProviderType.manga) {
       _openReader(episodes, index, detail);
       return;
     }
@@ -621,9 +628,16 @@ class _DetailViewState extends State<_DetailView>
 
   /// Routes a reading-type title (manga/novel) to its reader instead of the
   /// player. [chapters] mirrors [_openPlayer]'s `episodes` list; [index] is
-  /// the tapped/resume chapter.
+  /// the tapped/resume chapter. Prefers `detail.type`; falls back to
+  /// `widget.item.type` for the disagreeing-provider-JSON case the guard
+  /// above also covers, so a mismatch still lands on the right reader
+  /// instead of silently doing nothing.
   void _openReader(List<Episode> chapters, int index, MediaDetail detail) {
-    switch (detail.type) {
+    final readingType =
+        (detail.type == ProviderType.novel || detail.type == ProviderType.manga)
+        ? detail.type
+        : widget.item.type;
+    switch (readingType) {
       case ProviderType.novel:
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -935,8 +949,12 @@ class _DetailViewState extends State<_DetailView>
     final resumeIdx = resume.index;
     // Warm the stream for the episode Play will start, in the background, so
     // tapping Play is near-instant. Deferred to after this frame so it can't
-    // affect the detail screen's rendering/scroll.
-    if (eps.isNotEmpty) _maybePrefetch(eps[resumeIdx].url, item.sourceId);
+    // affect the detail screen's rendering/scroll. Skipped for reading types
+    // — prefetch resolves VIDEO sources, and merely opening a manga/novel
+    // detail must never fire that against a chapter URL.
+    if (!isReading && eps.isNotEmpty) {
+      _maybePrefetch(eps[resumeIdx].url, item.sourceId);
+    }
     final hasAnyMark = eps.any(
       (e) => store.get(item.sourceId, item.url, e.id) != null,
     );
@@ -1265,11 +1283,11 @@ class _DetailViewState extends State<_DetailView>
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
-              tabs: const [
-                Tab(text: 'Episodes'),
-                Tab(text: 'Cast'),
-                Tab(text: 'Relations'),
-                Tab(text: 'Details'),
+              tabs: [
+                Tab(text: isReading ? 'Chapters' : 'Episodes'),
+                const Tab(text: 'Cast'),
+                const Tab(text: 'Relations'),
+                const Tab(text: 'Details'),
               ],
             ),
           ),
@@ -1300,6 +1318,7 @@ class _DetailViewState extends State<_DetailView>
             onInfo: () => _tabController.animateTo(3),
             onDownload: (ep) => _downloadSingle(ep, detail, category),
             showDownload: !isReading,
+            isReading: isReading,
           ),
           // ── Cast ────────────────────────────────────────────────────────────
           _CastTab(
@@ -2007,6 +2026,7 @@ class _EpisodesTab extends StatefulWidget {
     required this.onInfo,
     required this.onDownload,
     this.showDownload = true,
+    this.isReading = false,
   });
 
   final List<Episode> eps;
@@ -2039,6 +2059,11 @@ class _EpisodesTab extends StatefulWidget {
   /// not a video source, so the per-row download icon is hidden rather than
   /// left as a dead/misleading tap target.
   final bool showDownload;
+
+  /// True for reading types — the section header reads "Chapters" instead
+  /// of "Episodes" (single-season case only; multi-season keeps the season
+  /// pill either way).
+  final bool isReading;
 
   @override
   State<_EpisodesTab> createState() => _EpisodesTabState();
@@ -2164,6 +2189,7 @@ class _EpisodesTabState extends State<_EpisodesTab> {
             grid: _grid,
             onToggleView: () => setState(() => _grid = !_grid),
             onJump: showRanges ? _jump : null,
+            isReading: widget.isReading,
           ),
         ),
         if (showRanges)
@@ -2273,6 +2299,7 @@ class _EpisodesHeader extends StatelessWidget {
     required this.grid,
     required this.onToggleView,
     this.onJump,
+    this.isReading = false,
   });
 
   final bool hasMultipleSeasons;
@@ -2287,6 +2314,9 @@ class _EpisodesHeader extends StatelessWidget {
 
   /// Jump-to-episode; null hides the button (short seasons don't need it).
   final VoidCallback? onJump;
+
+  /// True for reading types — the single-season label reads "Chapters".
+  final bool isReading;
 
   Widget _circle(IconData icon, VoidCallback onTap, {String? semanticLabel}) =>
       Semantics(
@@ -2358,7 +2388,10 @@ class _EpisodesHeader extends StatelessWidget {
                         ),
                       ),
                     )
-                  : Text('Episodes', style: AppText.headline),
+                  : Text(
+                      isReading ? 'Chapters' : 'Episodes',
+                      style: AppText.headline,
+                    ),
             ),
           ),
           // Right: jump-to-episode (long seasons) · list/grid toggle · ⓘ info.

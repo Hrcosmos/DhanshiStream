@@ -25,14 +25,17 @@ import 'package:watch_app/core/playback/my_list.dart';
 import 'package:watch_app/core/playback/playback_prefs.dart';
 import 'package:watch_app/core/playback/resume_store.dart';
 import 'package:watch_app/core/playback/title_prefs.dart';
+import 'package:watch_app/core/playback/watch_history.dart';
 import 'package:watch_app/core/provider/cloudstream_provider.dart';
 import 'package:watch_app/core/provider/base_provider.dart';
 import 'package:watch_app/core/provider/provider_registry.dart';
 import 'package:watch_app/core/reading/reader_prefs.dart';
 import 'package:watch_app/core/repository/source_repository.dart';
+import 'package:watch_app/core/supabase/supabase_service.dart';
 import 'package:watch_app/core/tracker/tracker_hub.dart';
 import 'package:watch_app/core/trailer/trailer_service.dart';
 import 'package:watch_app/features/detail/detail_screen.dart';
+import 'package:watch_app/features/player/player_screen.dart';
 import 'package:watch_app/features/reader/novel_reader_screen.dart';
 
 // ── Minimal stubs — no Hive, no platform channels, no network ───────────────
@@ -42,9 +45,14 @@ import 'package:watch_app/features/reader/novel_reader_screen.dart';
 /// own already-tested error state (see novel_reader_test.dart) via the
 /// inherited noSuchMethod, which is exactly what we want: we're only proving
 /// the PUSH happened, not re-testing the reader's load path.
+///
+/// `prefetch` calls are recorded (not just no-op'd) so a test can assert
+/// _maybePrefetch never fires `sources()`-resolution against a reading
+/// title's chapter URL — Finding 1 of the fix round.
 class _StubSourceRepository implements SourceRepository {
   _StubSourceRepository(this._detail);
   final MediaDetail _detail;
+  final List<String> prefetchCalls = [];
 
   @override
   noSuchMethod(Invocation i) => super.noSuchMethod(i);
@@ -57,7 +65,9 @@ class _StubSourceRepository implements SourceRepository {
   }) async => _detail;
 
   @override
-  void prefetch(String url, {String? sourceId}) {}
+  void prefetch(String url, {String? sourceId}) {
+    prefetchCalls.add(url);
+  }
 
   @override
   String get sourceId => 'test';
@@ -221,17 +231,20 @@ const _animeDetail = MediaDetail(
 
 /// Records pushes so the anime-regression test can prove `_openPlayer`'s
 /// original path ran (reached its final `Navigator.push`) WITHOUT actually
-/// building `PlayerScreen` — which wires up media_kit + a dozen more
+/// building `PlayerScreen`'s STATE — which wires up media_kit + a dozen more
 /// singletons that have no place in a lightweight widget test. `didPush`
 /// fires synchronously as part of `Navigator.push`, before any rebuild, so
 /// checking it right after `tester.tap()` (with no follow-up `pump()`) never
-/// triggers the destination route's build.
+/// triggers the destination route's build. Storing the route (not just a
+/// count) lets the test call its `builder` directly afterward — that
+/// constructs the `PlayerScreen` WIDGET (a plain field-holding object) without
+/// ever creating its `State`, so it's safe to assert the concrete type.
 class _RecordingNavigatorObserver extends NavigatorObserver {
-  int pushCount = 0;
+  final List<Route<dynamic>> pushed = [];
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    pushCount++;
+    pushed.add(route);
   }
 }
 
@@ -262,6 +275,12 @@ void main() {
     sl.registerSingleton<TrailerService>(_FakeTrailerService());
     sl.registerSingleton<TrackerHub>(TrackerHub(const []));
     sl.registerSingleton<ReaderPrefs>(_FakeReaderPrefs());
+    // Only needed for the anime test: building the pushed PlayerScreen WIDGET
+    // (not its State — see _RecordingNavigatorObserver) still evaluates every
+    // sl<T>() in _openPlayer's constructor-argument list, including this one.
+    sl.registerSingleton<WatchHistory>(
+      WatchHistory(SupabaseService(), () => null),
+    );
   });
 
   tearDown(() async {
@@ -281,17 +300,21 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
-      sl.registerSingleton<SourceRepository>(
-        _StubSourceRepository(_novelDetail),
-      );
+      final stub = _StubSourceRepository(_novelDetail);
+      sl.registerSingleton<SourceRepository>(stub);
 
       await tester.pumpWidget(
         const MaterialApp(home: DetailScreen(item: _novelItem)),
       );
       await tester.pump(); // let the cubit's load() resolve
+      await tester.pump(); // flush _maybePrefetch's post-frame callback, if any
 
       expect(find.text('Read'), findsWidgets);
       expect(find.text('Play'), findsNothing);
+
+      // Finding 1: merely opening a reading title's detail must never fire
+      // video-source prefetch against a chapter URL.
+      expect(stub.prefetchCalls, isEmpty);
 
       // No Sub/Dub toggle anywhere on the page.
       expect(find.text('Sub'), findsNothing);
@@ -334,10 +357,20 @@ void main() {
       expect(find.text('Play'), findsWidgets);
       expect(find.text('Read'), findsNothing);
 
-      final before = observer.pushCount;
+      final before = observer.pushed.length;
       // No pump() after this tap on purpose — see _RecordingNavigatorObserver.
       await tester.tap(find.text('Play').first);
-      expect(observer.pushCount, before + 1);
+      expect(observer.pushed.length, before + 1);
+
+      // Precise, not just "something got pushed": build the pushed route's
+      // widget (never its State — see the class doc above) and assert it's
+      // actually PlayerScreen, so a refactor that pushed some other route
+      // would fail this test.
+      final pushedRoute = observer.pushed.last as MaterialPageRoute;
+      final pushedWidget = pushedRoute.builder(
+        tester.element(find.byType(DetailScreen)),
+      );
+      expect(pushedWidget, isA<PlayerScreen>());
     },
   );
 }
