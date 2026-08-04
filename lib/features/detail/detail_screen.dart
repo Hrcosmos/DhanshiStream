@@ -60,6 +60,7 @@ import '../../core/ui/states.dart';
 import '../player/player_screen.dart';
 import '../player/tv_exo_player_screen.dart';
 import '../player/tv_native_player.dart'; // used by the detail_screen_tv.dart part
+import '../reader/manga_reader_screen.dart';
 import '../reader/novel_reader_screen.dart';
 import '../trailer/trailer_screen.dart';
 import 'cubit/detail_cubit.dart';
@@ -654,8 +655,18 @@ class _DetailViewState extends State<_DetailView>
         );
         return;
       case ProviderType.manga:
-        // TODO(task-13): replace with a MangaReaderScreen push.
-        _snack('Manga reader coming in this branch');
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MangaReaderScreen(
+              sourceId: widget.item.sourceId,
+              showId: widget.item.id,
+              showTitle: detail.title,
+              cover: detail.cover ?? widget.item.cover,
+              chapters: chapters,
+              startIndex: index,
+            ),
+          ),
+        );
         return;
       case ProviderType.anime:
       case ProviderType.movie:
