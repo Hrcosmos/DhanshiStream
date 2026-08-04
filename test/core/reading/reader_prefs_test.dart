@@ -37,15 +37,19 @@ void main() {
   });
 
   test('numeric prefs coerce int round-trips to double', () async {
-    // Hive can round-trip a value written as an int back as an int even
-    // though the field is typed double — the same trap PlaybackPrefs guards
-    // against. setFontSize(20) below writes an int literal; the getter must
-    // still hand back a double or this throws a cast error.
+    // A double-typed setter always converts its argument to a real double
+    // before it hits the box, so calling setFontSize(20) can never reproduce
+    // the trap. Hive itself can still hand back a stored int for a field
+    // that's typed double (e.g. a value written by an older schema, or a
+    // raw Hive edit) — write straight to the box, bypassing the setters, to
+    // reproduce that. The getter must still hand back a double or this
+    // throws a cast error.
     await ReaderPrefs.init();
+    final box = Hive.box(ReaderPrefs.boxName);
+    await box.put('fontSize', 20);
+    await box.put('lineHeight', 2);
+    await box.put('marginWidth', 30);
     final p = ReaderPrefs();
-    await p.setFontSize(20);
-    await p.setLineHeight(2);
-    await p.setMarginWidth(30);
     expect(p.fontSize, isA<double>());
     expect(p.fontSize, 20.0);
     expect(p.lineHeight, isA<double>());
