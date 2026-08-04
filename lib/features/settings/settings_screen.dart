@@ -676,7 +676,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _push(const PlaybackSettingsScreen()),
       ),
       _SettingsEntry(
-        section: 'Playback',
+        section: 'History',
         icon: Icons.history_rounded,
         title: 'History',
         subtitle: 'Shows you\'ve watched',
@@ -984,6 +984,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'Account & sync',
     'Sources',
     'Playback',
+    'History',
     'Downloads',
     'Interface',
     'Notifications',
@@ -1037,15 +1038,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Widget> _categoryRows(List<_SettingsEntry> entries) {
     final tiles = <Widget>[];
     for (final section in _sectionOrder) {
-      final count = entries.where((e) => e.section == section).length;
-      if (count == 0) continue;
+      final items = entries.where((e) => e.section == section).toList();
+      if (items.isEmpty) continue;
       tiles.add(
         SettingsTile(
           icon: _sectionIcon(section),
           title: section,
           subtitle: _sectionSummary(section),
           iconAccent: tiles.isEmpty, // accent the lead row
-          onTap: () => _settingsCubit.open(section),
+          // A section with a single destination (Playback, History,
+          // Notifications) opens it directly — no redundant one-row sub-page.
+          onTap: items.length == 1
+              ? items.first.onTap
+              : () => _settingsCubit.open(section),
         ),
       );
     }
@@ -1095,6 +1100,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'Account & sync' => Icons.person_outline_rounded,
     'Sources' => Icons.dns_rounded,
     'Playback' => Icons.play_circle_outline_rounded,
+    'History' => Icons.history_rounded,
     'Downloads' => Icons.download_outlined,
     'Interface' => Icons.tune_rounded,
     'Notifications' => Icons.notifications_none_rounded,
@@ -1106,7 +1112,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _sectionSummary(String section) => switch (section) {
     'Account & sync' => 'Sign in, trackers, Discord, backup',
     'Sources' => 'Providers, active source, updates',
-    'Playback' => 'Quality, autoplay, speed, history',
+    'Playback' => 'Quality, autoplay, speed',
+    'History' => 'Shows you\'ve watched',
     'Downloads' => 'Downloads, storage, torrents',
     'Interface' => 'Appearance, search layout',
     'Notifications' => 'New-episode alerts',
