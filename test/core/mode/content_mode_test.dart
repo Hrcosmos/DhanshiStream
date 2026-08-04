@@ -12,6 +12,11 @@ void main() {
     expect(ContentMode.novel.isReading, isTrue);
   });
 
+  test('every mode has its own icon', () {
+    final icons = ContentMode.values.map((m) => m.icon).toSet();
+    expect(icons.length, ContentMode.values.length);
+  });
+
   test('mode ↔ provider type matching', () {
     // Anime mode owns both existing video types (anime + movie sources).
     expect(ContentMode.anime.matchesProvider(ProviderType.anime), isTrue);

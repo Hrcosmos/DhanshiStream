@@ -37,6 +37,7 @@ import '../../core/ui/featured_hero.dart';
 import '../../core/metadata/title_logo_service.dart';
 import '../../core/ui/list_status_sheet.dart';
 import '../../core/ui/media_info_sheet.dart';
+import '../../core/ui/mode_switcher.dart';
 import '../../core/ui/poster_card.dart';
 import '../../core/ui/row_skeleton.dart';
 import '../../core/ui/source_switcher.dart';
@@ -417,6 +418,8 @@ class _HomeViewState extends State<_HomeView> {
             ),
             // Header bell is parked for now (design TBD) — re-add
             // `_notificationBell(context)` here once one is chosen.
+            const ModeSwitcher(),
+            const SizedBox(width: 8),
             BlocBuilder<ActiveSourceCubit, String>(
               builder: (context, id) => SourceSwitcher(
                 currentId: id,
