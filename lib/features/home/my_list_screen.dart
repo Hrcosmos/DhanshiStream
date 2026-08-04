@@ -6,6 +6,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
+import '../../core/mode/content_mode.dart';
+import '../../core/mode/content_mode_cubit.dart';
 import '../../core/models/media_item.dart';
 import '../../core/models/provider_info.dart';
 import '../../core/models/watch_status.dart';
@@ -711,7 +713,12 @@ class _MyListViewState extends State<_MyListView> {
         .where((s) => entries.any((e) => e.status == s))
         .toList();
 
+    // Reading modes (manga/novel) see only their own items; anime mode's
+    // matchesProvider covers BOTH anime + movie types, so this is a no-op
+    // there — today's anime My List is unaffected.
+    final mode = sl<ContentModeCubit>().state;
     final filtered = entries.where((e) {
+      if (!mode.matchesProvider(e.item.type)) return false;
       if (_statusFilter != null && e.status != _statusFilter) return false;
       if (_typeFilter != null && e.item.type != _typeFilter) return false;
       return true;

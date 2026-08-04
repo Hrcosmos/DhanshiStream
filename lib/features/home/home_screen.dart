@@ -10,6 +10,7 @@ import '../../core/notify/notification_service.dart';
 import '../../core/update/extension_auto_updater.dart';
 import '../../core/provider/cloudstream_provider.dart';
 import '../../core/provider/provider_manager.dart';
+import '../../core/models/episode.dart';
 import '../../core/models/home_section.dart';
 import '../../core/models/media_detail.dart';
 import '../../core/models/media_item.dart';
@@ -19,6 +20,7 @@ import '../../core/playback/playback_prefs.dart';
 import '../../core/playback/resume_store.dart';
 import '../../core/playback/title_prefs.dart';
 import '../../core/playback/watch_history.dart';
+import '../../core/reading/read_history.dart';
 import '../../core/repository/source_repository.dart';
 import '../../core/privacy/incognito_mode.dart';
 import '../../core/state/active_source_cubit.dart';
@@ -28,10 +30,11 @@ import '../../core/announce/announcement.dart';
 import '../announce/announcement_sheet.dart';
 import '../community/community_sheet.dart';
 import '../notify/subscriptions_screen.dart';
+import '../reader/novel_reader_screen.dart';
 import '../sources/aniyomi_repo_tab.dart' show kAniyomiReposBoxName;
 import '../update/update_dialog.dart';
+import 'continue_section.dart';
 import '../../core/ui/content_row.dart';
-import '../../core/ui/continue_card.dart';
 import '../../core/ui/featured_carousel.dart';
 import '../../core/ui/featured_hero.dart';
 import '../../core/metadata/title_logo_service.dart';
@@ -343,6 +346,42 @@ class _HomeViewState extends State<_HomeView> {
           category: e.category,
           malId: e.malId,
           scrobbleTitle: e.malId != null ? e.showTitle : null,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Resume from Continue Reading. [ReadEntry] only carries the last-read
+  /// CHAPTER's own url (not the show's page url — unlike [HistoryEntry],
+  /// which has both), so this can't re-resolve the show's full chapter list
+  /// the way [_resume] does for video. Instead it reopens exactly that one
+  /// chapter at its saved scroll position (restored by NovelReaderScreen
+  /// itself via ReadStore) — prev/next chapter navigation isn't available
+  /// from here, only from the title's own Detail screen.
+  ///
+  /// Manga reader doesn't exist yet (task-13), so every entry today is a
+  /// novel one; this can route straight to [NovelReaderScreen] without
+  /// needing to know the entry's reading type.
+  Future<void> _resumeReading(ReadEntry e) async {
+    final chapter = Episode(
+      id: e.chapterId,
+      title: e.chapterNumber != null
+          ? 'Chapter ${e.chapterNumber!.toInt()}'
+          : 'Chapter',
+      number: e.chapterNumber,
+      url: e.chapterUrl,
+    );
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NovelReaderScreen(
+          sourceId: e.sourceId,
+          showId: e.showId,
+          showTitle: e.title,
+          cover: e.cover,
+          chapters: [chapter],
+          startIndex: 0,
         ),
       ),
     );
@@ -687,62 +726,21 @@ class _HomeViewState extends State<_HomeView> {
                   if (needsReconnect)
                     SliverToBoxAdapter(child: _reconnectBanner()),
 
-                  // ── Continue Watching (same poster footprint as the rows) ─
-                  // Driven by the watch_history box's listenable, NOT a one-shot
-                  // read: the cloud pull writes history AFTER this build runs
-                  // (the login / boot-migration race), so reading recent() once
-                  // here would render blank until the next navigation. Reacting
-                  // to the box makes the row appear the instant the pull lands.
-                  // Login-gated, and guarded so a signed-out render (or the test
-                  // env) never touches the box — production opens it at boot.
-                  if (loggedIn && Hive.isBoxOpen(WatchHistory.boxName))
-                    ValueListenableBuilder(
-                      valueListenable: Hive.box<Map>(
-                        WatchHistory.boxName,
-                      ).listenable(),
-                      builder: (context, _, _) {
-                        final history = sl<WatchHistory>().recent();
-                        if (history.isEmpty) {
-                          return const SliverToBoxAdapter(
-                            child: SizedBox.shrink(),
-                          );
-                        }
-                        return SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: _animated(
-                              ContentRow(
-                                title: 'Continue Watching',
-                                itemWidth: 230,
-                                itemHeight: 129, // 16:9 landscape card
-                                onSeeAll: _openHistory,
-                                itemCount: history.length,
-                                itemBuilder: (c, i) {
-                                  final e = history[i];
-                                  return ContinueCard(
-                                    title: e.showTitle,
-                                    // Prefer the landscape episode thumbnail;
-                                    // fall back to the portrait cover (older
-                                    // entries / sources without thumbnails).
-                                    imageUrl: e.thumbnail ?? e.cover,
-                                    headers: e.coverHeaders,
-                                    progress: e.progress,
-                                    cellWidth: 230,
-                                    subtitle: e.episodeNumber != null
-                                        ? 'Episode ${e.episodeNumber!.toInt()}'
-                                        : null,
-                                    onTap: () => _resume(e),
-                                    onLongPress: () => _showContinueInfo(e),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  else
-                    const SliverToBoxAdapter(child: SizedBox.shrink()),
+                  // ── Continue Watching / Continue Reading ──────────────────
+                  // Driven by the watch/read history box's listenable, NOT a
+                  // one-shot read: the cloud pull writes history AFTER this
+                  // build runs (the login / boot-migration race), so reading
+                  // recent() once here would render blank until the next
+                  // navigation. Reacting to the box makes the row appear the
+                  // instant the pull lands. Swapped by ContentMode — see
+                  // ContinueSection.
+                  ContinueSection(
+                    loggedIn: loggedIn,
+                    onResume: _resume,
+                    onLongPress: _showContinueInfo,
+                    onSeeAll: _openHistory,
+                    onResumeReading: _resumeReading,
+                  ),
 
                   // ── Provider-defined browse rows (CloudStream-style) ──────
                   // The active provider decides the rows + their names; empty

@@ -29,6 +29,7 @@ import 'package:watch_app/core/playback/watch_history.dart';
 import 'package:watch_app/core/provider/cloudstream_provider.dart';
 import 'package:watch_app/core/provider/base_provider.dart';
 import 'package:watch_app/core/provider/provider_registry.dart';
+import 'package:watch_app/core/reading/read_store.dart';
 import 'package:watch_app/core/reading/reader_prefs.dart';
 import 'package:watch_app/core/repository/source_repository.dart';
 import 'package:watch_app/core/supabase/supabase_service.dart';
@@ -118,6 +119,26 @@ class _FakeResumeStore implements ResumeStore {
 
   @override
   ResumeMark? get(String sourceId, String showId, String episodeId) => null;
+}
+
+/// [ReadStore] stub for the Part E (Task 12) resume test — [marks] is keyed
+/// by chapterId only (the tests here use a single show), mirroring the shape
+/// of a saved {pos,total} mark without touching a real Hive box.
+class _FakeReadStore extends ReadStore {
+  _FakeReadStore(this.marks);
+  final Map<String, ({int pos, int total})> marks;
+
+  @override
+  ({int pos, int total})? get(String sourceId, String showId, String chapterId) =>
+      marks[chapterId];
+
+  @override
+  bool finished(String sourceId, String showId, String chapterId) {
+    final m = marks[chapterId];
+    if (m == null || m.total <= 0) return false;
+    if (m.total == 1000) return m.pos >= 950;
+    return m.pos >= m.total - 1;
+  }
 }
 
 class _FakeProviderRegistry implements ProviderRegistry {
@@ -275,6 +296,10 @@ void main() {
     sl.registerSingleton<TrailerService>(_FakeTrailerService());
     sl.registerSingleton<TrackerHub>(TrackerHub(const []));
     sl.registerSingleton<ReaderPrefs>(_FakeReaderPrefs());
+    // Empty by default (no saved reading position) — the novel test below
+    // just needs this registered so _readResumeIndex's sl<ReadStore>() call
+    // doesn't blow up; the dedicated resume test overrides it with marks.
+    sl.registerSingleton<ReadStore>(_FakeReadStore(const {}));
     // Only needed for the anime test: building the pushed PlayerScreen WIDGET
     // (not its State — see _RecordingNavigatorObserver) still evaluates every
     // sl<T>() in _openPlayer's constructor-argument list, including this one.
@@ -330,6 +355,42 @@ void main() {
       await tester.tap(find.textContaining('Chapter 1'));
       await tester.pumpAndSettle();
       expect(find.byType(NovelReaderScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Task 12 Part E: the Read button resumes from the last-read chapter '
+    '(ReadStore), not always chapter 1',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      sl.registerSingleton<SourceRepository>(
+        _StubSourceRepository(_novelDetail),
+      );
+      // Chapter 1 (c1) is saved as FINISHED (pos >= total-1) — the reader
+      // should resume on chapter 2 (c2), not restart chapter 1. Overrides
+      // setUp's empty default.
+      sl.unregister<ReadStore>();
+      sl.registerSingleton<ReadStore>(
+        _FakeReadStore({'c1': (pos: 19, total: 20)}),
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(home: DetailScreen(item: _novelItem)),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.text('Read').first);
+      await tester.pumpAndSettle();
+
+      final reader = tester.widget<NovelReaderScreen>(
+        find.byType(NovelReaderScreen),
+      );
+      expect(reader.startIndex, 1); // resumed onto chapter 2 (index 1)
+      expect(reader.chapters.length, 2); // still the full chapter list
     },
   );
 

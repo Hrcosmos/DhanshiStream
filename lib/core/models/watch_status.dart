@@ -53,6 +53,20 @@ extension WatchStatusX on WatchStatus {
   };
 }
 
+/// [WatchStatusX.label], but reading-aware: in a reading mode (manga/novel),
+/// Watching reads as "Reading" and Plan to Watch as "Plan to Read" —
+/// Completed/Paused/Dropped don't need a reading-specific word, so they pass
+/// through unchanged. Display-only: the persisted [WatchStatusX.key] (the
+/// enum `.name`) never changes, so cloud sync/backup are untouched.
+String labelFor(WatchStatus s, {required bool reading}) {
+  if (!reading) return s.label;
+  return switch (s) {
+    WatchStatus.watching => 'Reading',
+    WatchStatus.planning => 'Plan to Read',
+    WatchStatus.completed || WatchStatus.paused || WatchStatus.dropped => s.label,
+  };
+}
+
 /// Parse a stored status name (null/unknown → null).
 WatchStatus? watchStatusFromName(String? name) {
   if (name == null) return null;

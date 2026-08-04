@@ -219,4 +219,68 @@ void main() {
     await h.seedCloudIfNeeded(); // must not throw despite upsert() throwing
     expect(h.recent().single.showId, 'a'); // local state untouched
   });
+
+  // ── pullFromCloudIfStale (Task 12 Part D) ───────────────────────────────
+  // Mirrors WatchHistory.pullFromCloudIfStale's staleness-marker behaviour —
+  // without it, boot/resume have nothing to call and Continue Reading only
+  // ever restores on sign-in.
+
+  Map<String, dynamic> cloudRow(String showId, {int updatedMs = 100}) => {
+    'user_key': 'user1', 'source_id': 'js:m', 'show_id': showId,
+    'title': 'Cloud $showId', 'cover': null, 'chapter_id': 'chCloud',
+    'chapter_number': 1, 'chapter_url': 'u', 'pos': 1, 'total': 20,
+    'updated_ms': updatedMs,
+  };
+
+  test('pullFromCloudIfStale() pulls when there is no prior pull marker',
+      () async {
+    final fake = FakeReadingHistoryRemote()..rows.add(cloudRow('fromCloud'));
+    final h = ReadHistory(SupabaseService(), () => 'user1', remote: fake);
+
+    await h.pullFromCloudIfStale();
+
+    expect(h.recent().map((e) => e.showId), contains('fromCloud'));
+  });
+
+  test('pullFromCloudIfStale() skips the pull when the marker is fresher '
+      'than maxAge', () async {
+    final fake = FakeReadingHistoryRemote()..rows.add(cloudRow('fromCloud'));
+    final h = ReadHistory(SupabaseService(), () => 'user1', remote: fake);
+    await h.pullFromCloud(); // sets the "just pulled" marker
+    fake.rows.add(cloudRow('addedAfterMarker')); // arrives after that pull
+
+    await h.pullFromCloudIfStale(maxAge: const Duration(hours: 12));
+
+    // Still fresh — the second row was never fetched.
+    expect(
+      h.recent().map((e) => e.showId),
+      isNot(contains('addedAfterMarker')),
+    );
+  });
+
+  test('pullFromCloudIfStale() pulls when the marker is older than maxAge',
+      () async {
+    final fake = FakeReadingHistoryRemote()..rows.add(cloudRow('fromCloud'));
+    final h = ReadHistory(SupabaseService(), () => 'user1', remote: fake);
+    await h.pullFromCloud();
+    // Back-date the marker past maxAge so the next call treats it as stale.
+    Hive.box(ReadHistory.syncMetaBox).put(
+      'reading_history_lastPullMs',
+      DateTime.now().millisecondsSinceEpoch - const Duration(days: 1).inMilliseconds,
+    );
+    fake.rows.add(cloudRow('addedLater', updatedMs: 200));
+
+    await h.pullFromCloudIfStale(maxAge: const Duration(hours: 12));
+
+    expect(h.recent().map((e) => e.showId), contains('addedLater'));
+  });
+
+  test('pullFromCloudIfStale() does nothing when signed out', () async {
+    final fake = FakeReadingHistoryRemote()..rows.add(cloudRow('fromCloud'));
+    final h = ReadHistory(SupabaseService(), () => null, remote: fake);
+
+    await h.pullFromCloudIfStale();
+
+    expect(h.recent(), isEmpty);
+  });
 }

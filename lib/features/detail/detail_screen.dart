@@ -47,6 +47,7 @@ import '../../core/playback/title_prefs.dart';
 import '../../core/playback/watch_history.dart';
 import '../../core/provider/cloudstream_provider.dart';
 import '../../core/provider/provider_registry.dart';
+import '../../core/reading/read_store.dart';
 import '../../core/repository/source_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
@@ -727,6 +728,33 @@ class _DetailViewState extends State<_DetailView>
     return (index: 0, hasResume: false);
   }
 
+  /// Reading counterpart of [_resumeIndex]: walks the chapters for the
+  /// highest one carrying a saved reading position (per-chapter, from
+  /// [ReadStore] — the reader's own scroll/page progress), advancing past it
+  /// once it's finished — same rule [_resumeIndex] applies to video resume
+  /// marks. Keyed the same way [NovelReaderScreen] saves them: showId is
+  /// [MediaItem.id], not the show url (see `_openReader`).
+  int _readResumeIndex(List<Episode> chapters) {
+    if (chapters.isEmpty) return 0;
+    final store = sl<ReadStore>();
+    int? highestMarked;
+    for (var j = 0; j < chapters.length; j++) {
+      if (store.get(widget.item.sourceId, widget.item.id, chapters[j].id) !=
+          null) {
+        highestMarked = j;
+      }
+    }
+    if (highestMarked == null) return 0;
+    if (!store.finished(
+      widget.item.sourceId,
+      widget.item.id,
+      chapters[highestMarked].id,
+    )) {
+      return highestMarked;
+    }
+    return highestMarked + 1 < chapters.length ? highestMarked + 1 : highestMarked;
+  }
+
   // ── Downloads ─────────────────────────────────────────────────────────────
 
   /// The main Download button. A single movie/episode goes straight to the
@@ -945,8 +973,11 @@ class _DetailViewState extends State<_DetailView>
 
     // Resume / play button logic. Local playback first; else fall back to the
     // tracker's watched count (see _resumeTarget). Local case is unchanged.
+    // Reading titles use their OWN progress store instead — _resumeTarget's
+    // ResumeStore never carries a mark for a chapter, so it would always
+    // (harmlessly but wrongly) say "start over".
     final resume = _resumeTarget(eps);
-    final resumeIdx = resume.index;
+    final resumeIdx = isReading ? _readResumeIndex(eps) : resume.index;
     // Warm the stream for the episode Play will start, in the background, so
     // tapping Play is near-instant. Deferred to after this frame so it can't
     // affect the detail screen's rendering/scroll. Skipped for reading types

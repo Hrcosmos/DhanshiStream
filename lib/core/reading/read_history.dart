@@ -245,6 +245,24 @@ class ReadHistory {
     } catch (_) {/* keep local — missing table / offline degrades silently */}
   }
 
+  /// Pull from cloud only when the last successful pull is older than
+  /// [maxAge] — see [WatchHistory.pullFromCloudIfStale]. Keeps app launches
+  /// from re-downloading Continue Reading that's already cached locally.
+  Future<void> pullFromCloudIfStale({
+    Duration maxAge = const Duration(hours: 12),
+  }) async {
+    if (_currentUserId() == null) return;
+    int? last;
+    if (Hive.isBoxOpen(syncMetaBox)) {
+      last = Hive.box(syncMetaBox).get(_syncMetaKey) as int?;
+    }
+    if (last != null) {
+      final age = DateTime.now().millisecondsSinceEpoch - last;
+      if (age >= 0 && age < maxAge.inMilliseconds) return; // still fresh
+    }
+    await pullFromCloud();
+  }
+
   void _markPulled() {
     if (Hive.isBoxOpen(syncMetaBox)) {
       Hive.box(syncMetaBox)
