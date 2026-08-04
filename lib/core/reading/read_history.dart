@@ -251,4 +251,15 @@ class ReadHistory {
           .put(_syncMetaKey, DateTime.now().millisecondsSinceEpoch);
     }
   }
+
+  /// Drop the local cache only — see [WatchHistory.clearLocal]. The cloud
+  /// copy is the user's data and MUST survive, so this must never touch the
+  /// cloud. Not yet wired into the sign-in/out flow (that's a later task);
+  /// exists now so it's correct when that wiring lands.
+  Future<void> clearLocal() async {
+    await _box.clear();
+    if (Hive.isBoxOpen(syncMetaBox)) {
+      await Hive.box(syncMetaBox).delete(_syncMetaKey);
+    }
+  }
 }

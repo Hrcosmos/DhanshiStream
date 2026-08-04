@@ -130,6 +130,66 @@ void main() {
     expect(ids, {'localOnly', 'fromCloud'}); // both survive — merge, not replace
   });
 
+  test('pullFromCloud() does NOT overwrite a local row when the cloud copy '
+      'is OLDER (newest-wins, local-newer direction)', () async {
+    final fake = FakeReadingHistoryRemote();
+    final loggedOut = ReadHistory(SupabaseService(), () => null, remote: fake);
+    await loggedOut.save(entry('shared', pos: 8, ts: 100)); // local at t=100
+
+    fake.rows.add({
+      'user_key': 'user1', 'source_id': 'js:m', 'show_id': 'shared',
+      'title': 'Cloud', 'cover': null, 'chapter_id': 'chCloud',
+      'chapter_number': 9, 'chapter_url': 'uCloud', 'pos': 2, 'total': 20,
+      'updated_ms': 50, // OLDER than local
+    });
+
+    final h = ReadHistory(SupabaseService(), () => 'user1', remote: fake);
+    await h.pullFromCloud();
+
+    final row = h.recent().single;
+    expect(row.pos, 8); // local content kept
+    expect(row.chapterId, 'ch1'); // local content kept, not the cloud's 'chCloud'
+    expect(row.updatedMs, 100);
+  });
+
+  test('pullFromCloud() DOES overwrite a local row when the cloud copy is '
+      'NEWER (newest-wins, cloud-newer direction)', () async {
+    final fake = FakeReadingHistoryRemote();
+    final loggedOut = ReadHistory(SupabaseService(), () => null, remote: fake);
+    await loggedOut.save(entry('shared', pos: 2, ts: 10)); // local at t=10
+
+    fake.rows.add({
+      'user_key': 'user1', 'source_id': 'js:m', 'show_id': 'shared',
+      'title': 'Cloud', 'cover': null, 'chapter_id': 'chCloud',
+      'chapter_number': 9, 'chapter_url': 'uCloud', 'pos': 15, 'total': 20,
+      'updated_ms': 99, // NEWER than local
+    });
+
+    final h = ReadHistory(SupabaseService(), () => 'user1', remote: fake);
+    await h.pullFromCloud();
+
+    final row = h.recent().single;
+    expect(row.pos, 15); // cloud content won
+    expect(row.chapterId, 'chCloud'); // cloud content won, not the local's 'ch1'
+    expect(row.updatedMs, 99);
+  });
+
+  test('clearLocal() drops local rows and the lastPull marker but leaves '
+      'the cloud untouched (logout path) — a pull restores it', () async {
+    final fake = FakeReadingHistoryRemote();
+    final h = ReadHistory(SupabaseService(), () => 'user1', remote: fake);
+    await h.save(entry('a', pos: 1, ts: 1), flush: true);
+    expect(h.recent(), hasLength(1));
+
+    await h.clearLocal();
+
+    expect(h.recent(), isEmpty); // local dropped
+    expect(fake.rows.where((r) => r['user_key'] == 'user1'), hasLength(1)); // cloud survives
+
+    await h.pullFromCloud(); // cloud still has it — a pull brings it back
+    expect(h.recent().single.showId, 'a');
+  });
+
   test('seedCloudIfNeeded() backfills local rows to an empty cloud once, '
       'so a following pull restores instead of wiping', () async {
     final fake = FakeReadingHistoryRemote();
