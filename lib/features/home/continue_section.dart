@@ -162,8 +162,12 @@ class ContinueReadingRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: ContentRow(
           title: 'Continue Reading',
-          itemWidth: 230,
-          itemHeight: 129,
+          // Portrait, not the 16:9 landscape Continue Watching uses — that
+          // shape fits an episode thumbnail, but a chapter entry only has
+          // e.cover (a portrait poster), which would letterbox/crop badly at
+          // 230x129. Same 140x236 portrait cell the browse rows use.
+          itemWidth: 140,
+          itemHeight: 236,
           // No "See all" yet — there's no reading-history screen (the watch
           // History screen is anime-only).
           itemCount: history.length,
@@ -175,7 +179,7 @@ class ContinueReadingRow extends StatelessWidget {
               title: e.title,
               imageUrl: e.cover,
               progress: progress,
-              cellWidth: 230,
+              cellWidth: 140,
               subtitle: e.chapterNumber != null
                   ? 'Chapter ${e.chapterNumber!.toInt()}'
                   : null,

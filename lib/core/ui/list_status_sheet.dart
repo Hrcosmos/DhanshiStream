@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../di/injector.dart';
+import '../mode/content_mode.dart';
+import '../mode/content_mode_cubit.dart';
 import '../models/media_item.dart';
 import '../models/provider_info.dart';
 import '../models/watch_status.dart';
@@ -124,6 +126,7 @@ class ListStatusSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reading = sl<ContentModeCubit>().state.isReading;
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -151,7 +154,7 @@ class ListStatusSheet extends StatelessWidget {
                 color: current == s ? AppColors.accent : AppColors.textSecondary,
               ),
               title: Text(
-                s.label,
+                labelFor(s, reading: reading),
                 style: AppText.body.copyWith(
                   color: current == s ? AppColors.accent : AppColors.textPrimary,
                   fontWeight: current == s ? FontWeight.w600 : FontWeight.w400,

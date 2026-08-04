@@ -8,25 +8,26 @@
 //    untouched — matchesProvider is a no-op there (anime OR movie).
 //
 // ContinueWatchingRow/ContinueReadingRow (the actual card content — title,
-// subtitle, tap wiring) are pumped directly against a resolved list, and
-// ContinueSection's login/box gating is exercised without ever opening a
-// real Hive box. Both deliberately avoid mounting a live
-// ValueListenableBuilder over a real Hive box inside a widget test — that
-// combination reproducibly hangs `flutter test` in this environment even in
-// a two-line, feature-unrelated repro (bare ValueListenableBuilder over a
-// freshly-opened Hive box, no ContentRow/ContinueCard/BlocBuilder involved).
-// ContinueSection's reactive box-listenable wiring itself is unchanged for
-// anime (copied verbatim from the shipped, working code) and structurally
-// identical for reading, so it's verified by inspection + `flutter analyze`
-// instead. See task-12-report.md for the full writeup.
+// subtitle, tap wiring) are pumped directly against a resolved list.
+// ContinueSection's gating (login / box-not-open) is exercised without
+// opening a real Hive box; its LIVE branch selection (box open, real
+// ValueListenableBuilder mount) is exercised in the group below with
+// `tester.runAsync()` — real Hive I/O called directly inside a `testWidgets`
+// body (no runAsync) hangs indefinitely in this environment (bare
+// `Hive.init`/`openBox`, nothing feature-specific); `runAsync` is the
+// standard Flutter-test fix for exactly this class of hang, and it works
+// here. See task-12-report.md for the full writeup.
 //
 // The real HomeScreen isn't pumped at all — its initState fires a one-time,
 // un-DI'd update-check + real network call (UpdateService()) and opens
 // community/announcement Hive boxes, none of which this feature touches.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
 import 'package:watch_app/core/app_mode.dart';
 import 'package:watch_app/core/di/injector.dart';
 import 'package:watch_app/core/mode/content_mode.dart';
@@ -38,7 +39,10 @@ import 'package:watch_app/core/playback/list_status_store.dart';
 import 'package:watch_app/core/playback/my_list.dart';
 import 'package:watch_app/core/playback/watch_history.dart';
 import 'package:watch_app/core/reading/read_history.dart';
+import 'package:watch_app/core/supabase/supabase_service.dart';
 import 'package:watch_app/core/tracker/tracker_hub.dart';
+import 'package:watch_app/core/ui/content_row.dart';
+import 'package:watch_app/core/ui/continue_card.dart';
 import 'package:watch_app/features/home/continue_section.dart';
 import 'package:watch_app/features/home/my_list_screen.dart';
 
@@ -100,34 +104,38 @@ void main() {
     });
 
     testWidgets(
-      'ContinueWatchingRow renders the title, an Episode subtitle, and '
-      'resumes on tap — the anime row, unchanged (regression)',
+      'ContinueWatchingRow renders the title, an Episode subtitle, resumes '
+      'on tap/long-press, and passes every ContinueCard/ContentRow param '
+      'through unchanged — the anime row, unchanged (regression)',
       (tester) async {
         HistoryEntry? resumed;
+        HistoryEntry? longPressed;
+        final entry = HistoryEntry(
+          sourceId: 'src',
+          showId: 'show1',
+          showTitle: 'Anime Show',
+          cover: 'https://example.com/cover.jpg',
+          coverHeaders: const {'x-h': '1'},
+          thumbnail: 'https://example.com/thumb.jpg',
+          showUrl: '/show1',
+          category: 'sub',
+          episodeId: 'e1',
+          episodeNumber: 3,
+          episodeUrl: '/e1',
+          position: const Duration(minutes: 6),
+          duration: const Duration(minutes: 24),
+          updatedAt: 1,
+        );
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
               body: CustomScrollView(
                 slivers: [
                   ContinueWatchingRow(
-                    history: [
-                      HistoryEntry(
-                        sourceId: 'src',
-                        showId: 'show1',
-                        showTitle: 'Anime Show',
-                        showUrl: '/show1',
-                        category: 'sub',
-                        episodeId: 'e1',
-                        episodeNumber: 3,
-                        episodeUrl: '/e1',
-                        position: const Duration(minutes: 2),
-                        duration: const Duration(minutes: 24),
-                        updatedAt: 1,
-                      ),
-                    ],
+                    history: [entry],
                     onSeeAll: () {},
                     onResume: (e) => resumed = e,
-                    onLongPress: (_) {},
+                    onLongPress: (e) => longPressed = e,
                   ),
                 ],
               ),
@@ -139,8 +147,64 @@ void main() {
         expect(find.text('Continue Watching'), findsOneWidget);
         expect(find.text('Episode 3'), findsOneWidget);
 
+        // Pin every ContinueCard param the move could have dropped/swapped.
+        final card = tester.widget<ContinueCard>(find.byType(ContinueCard));
+        expect(card.imageUrl, entry.thumbnail); // thumbnail wins over cover
+        expect(card.headers, entry.coverHeaders);
+        expect(card.progress, 0.25); // 6min / 24min
+        expect(card.cellWidth, 230);
+
+        // Row geometry — 16:9 landscape (episode thumbnails), unchanged.
+        final row = tester.widget<ContentRow>(find.byType(ContentRow));
+        expect(row.itemWidth, 230);
+        expect(row.itemHeight, 129);
+
         await tester.tap(find.text('Anime Show'));
         expect(resumed?.showId, 'show1');
+
+        await tester.longPress(find.text('Anime Show'));
+        expect(longPressed?.showId, 'show1');
+      },
+    );
+
+    testWidgets(
+      'ContinueWatchingRow falls back to the portrait cover when there is '
+      'no episode thumbnail',
+      (tester) async {
+        final entry = HistoryEntry(
+          sourceId: 'src',
+          showId: 'show1',
+          showTitle: 'Anime Show',
+          cover: 'https://example.com/cover.jpg',
+          showUrl: '/show1',
+          category: 'sub',
+          episodeId: 'e1',
+          episodeNumber: null,
+          episodeUrl: '/e1',
+          position: Duration.zero,
+          duration: const Duration(minutes: 24),
+          updatedAt: 1,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: [
+                  ContinueWatchingRow(
+                    history: [entry],
+                    onSeeAll: () {},
+                    onResume: (_) {},
+                    onLongPress: (_) {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final card = tester.widget<ContinueCard>(find.byType(ContinueCard));
+        expect(card.imageUrl, entry.cover);
       },
     );
 
@@ -206,6 +270,15 @@ void main() {
         expect(find.text('Continue Reading'), findsOneWidget);
         expect(find.text('Chapter 5'), findsOneWidget);
         expect(find.text('Continue Watching'), findsNothing);
+
+        // Portrait geometry — a chapter entry only has a portrait cover
+        // (e.cover), not an episode thumbnail, so it must NOT use Continue
+        // Watching's 230x129 landscape cell (badly letterboxes a poster).
+        final row = tester.widget<ContentRow>(find.byType(ContentRow));
+        expect(row.itemWidth, 140);
+        expect(row.itemHeight, 236);
+        final card = tester.widget<ContinueCard>(find.byType(ContinueCard));
+        expect(card.cellWidth, 140);
 
         await tester.tap(find.text('Novel Title'));
         expect(resumed?.showId, 'show2');
@@ -278,6 +351,165 @@ void main() {
         expect(find.text('Continue Watching'), findsNothing);
         await pumpGated(tester, loggedIn: true, mode: ContentMode.manga);
         expect(find.text('Continue Reading'), findsNothing);
+      },
+    );
+  });
+
+  // ── Part A: ContinueSection's live branch selection ───────────────────────
+  // Proves `mode.isReading ? _readingRow() : _watchingRow()` actually picks
+  // the right row widget when the box IS open — the one path the gating
+  // group above can't reach (it never opens a box, by design).
+  //
+  // Real Hive I/O inside a `testWidgets` body must run through
+  // `tester.runAsync()` — without it, `Hive.init`/`openBox` hang
+  // indefinitely (reproduced in isolation: a bare `Hive.init` + `openBox`
+  // called directly inside a `testWidgets` callback never completes; the
+  // identical calls complete instantly either in a plain `test()` or when
+  // wrapped in `runAsync`). That's the actual root cause of the hang
+  // described in Part A's file-level comment above — not something
+  // specific to `ValueListenableBuilder` or this feature's code.
+
+  group("ContinueSection's live branch selection", () {
+    setUp(() async {
+      await sl.reset();
+      sl.registerSingleton<AppMode>(const AppMode(isTv: false));
+    });
+
+    tearDown(() async {
+      await sl.reset();
+    });
+
+    testWidgets(
+      'anime mode with the box open renders ContinueWatchingRow, not '
+      'ContinueReadingRow',
+      (tester) async {
+        late Directory dir;
+        await tester.runAsync(() async {
+          dir = await Directory.systemTemp.createTemp('continue_section_live');
+          Hive.init(dir.path);
+          await WatchHistory.init();
+          await ReadHistory.init();
+        });
+        sl.registerSingleton<WatchHistory>(
+          WatchHistory(SupabaseService(), () => null),
+        );
+        sl.registerSingleton<ReadHistory>(
+          ReadHistory(SupabaseService(), () => null),
+        );
+        await tester.runAsync(
+          () => sl<WatchHistory>().save(
+            HistoryEntry(
+              sourceId: 'src',
+              showId: 'show1',
+              showTitle: 'Anime Show',
+              showUrl: '/show1',
+              category: 'sub',
+              episodeId: 'e1',
+              episodeNumber: 1,
+              episodeUrl: '/e1',
+              position: const Duration(minutes: 1),
+              duration: const Duration(minutes: 24),
+              updatedAt: 1,
+            ),
+          ),
+        );
+        sl.registerSingleton<ContentModeCubit>(
+          _FakeContentModeCubit(ContentMode.anime),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: [
+                  ContinueSection(
+                    loggedIn: true,
+                    onResume: (_) {},
+                    onLongPress: (_) {},
+                    onSeeAll: () {},
+                    onResumeReading: (_) {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ContinueWatchingRow), findsOneWidget);
+        expect(find.byType(ContinueReadingRow), findsNothing);
+        expect(find.text('Continue Watching'), findsOneWidget);
+
+        await tester.runAsync(() async {
+          await Hive.deleteFromDisk();
+          if (await dir.exists()) await dir.delete(recursive: true);
+        });
+      },
+    );
+
+    testWidgets(
+      'a reading mode with the box open renders ContinueReadingRow, not '
+      'ContinueWatchingRow',
+      (tester) async {
+        late Directory dir;
+        await tester.runAsync(() async {
+          dir = await Directory.systemTemp.createTemp('continue_section_live');
+          Hive.init(dir.path);
+          await WatchHistory.init();
+          await ReadHistory.init();
+        });
+        sl.registerSingleton<WatchHistory>(
+          WatchHistory(SupabaseService(), () => null),
+        );
+        sl.registerSingleton<ReadHistory>(
+          ReadHistory(SupabaseService(), () => null),
+        );
+        await tester.runAsync(
+          () => sl<ReadHistory>().save(
+            ReadEntry(
+              sourceId: 'src',
+              showId: 'show2',
+              title: 'Novel Title',
+              chapterId: 'c1',
+              chapterNumber: 1,
+              chapterUrl: '/c1',
+              pos: 1,
+              total: 20,
+              updatedMs: 1,
+            ),
+          ),
+        );
+        sl.registerSingleton<ContentModeCubit>(
+          _FakeContentModeCubit(ContentMode.novel),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: [
+                  ContinueSection(
+                    loggedIn: true,
+                    onResume: (_) {},
+                    onLongPress: (_) {},
+                    onSeeAll: () {},
+                    onResumeReading: (_) {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ContinueReadingRow), findsOneWidget);
+        expect(find.byType(ContinueWatchingRow), findsNothing);
+        expect(find.text('Continue Reading'), findsOneWidget);
+
+        await tester.runAsync(() async {
+          await Hive.deleteFromDisk();
+          if (await dir.exists()) await dir.delete(recursive: true);
+        });
       },
     );
   });
