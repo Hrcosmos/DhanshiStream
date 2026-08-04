@@ -24,6 +24,7 @@ import '../search/title_suggestion_service.dart';
 import '../ui/animation_prefs.dart';
 import '../playback/skip_service.dart';
 import '../playback/resume_store.dart';
+import '../reading/read_store.dart';
 import '../playback/title_prefs.dart';
 import '../playback/watch_history.dart';
 import '../provider/cf_clearance_store.dart';
@@ -156,6 +157,8 @@ Future<void> initDependencies() async {
 
   await ResumeStore.init();
   sl.registerSingleton<ResumeStore>(ResumeStore());
+  await ReadStore.init();
+  sl.registerSingleton<ReadStore>(ReadStore());
   await WatchHistory.init();
   sl.registerSingleton<WatchHistory>(
     WatchHistory(sl<SupabaseService>(), currentUserId),
