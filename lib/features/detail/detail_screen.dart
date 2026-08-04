@@ -59,6 +59,7 @@ import '../../core/ui/states.dart';
 import '../player/player_screen.dart';
 import '../player/tv_exo_player_screen.dart';
 import '../player/tv_native_player.dart'; // used by the detail_screen_tv.dart part
+import '../reader/novel_reader_screen.dart';
 import '../trailer/trailer_screen.dart';
 import 'cubit/detail_cubit.dart';
 
@@ -531,6 +532,16 @@ class _DetailViewState extends State<_DetailView>
     MediaDetail detail,
     String category,
   ) async {
+    // Reading types never touch the player — route to the reader instead.
+    // Both tap paths (Play button + episode-row onTap) call this same
+    // function, so gating it here covers both in one place. Safety-critical:
+    // a manga/novel title must never try to resolve video sources.
+    final t = detail.type;
+    if (t == ProviderType.novel || t == ProviderType.manga) {
+      _openReader(episodes, index, detail);
+      return;
+    }
+
     // Auto-add this title to My List (as Watching) on play, if the user opted
     // in — mirrors the tracker auto-scrobble. Skipped in incognito and when it's
     // already listed; fire-and-forget so it never delays playback.
@@ -606,6 +617,35 @@ class _DetailViewState extends State<_DetailView>
         ),
       ),
     );
+  }
+
+  /// Routes a reading-type title (manga/novel) to its reader instead of the
+  /// player. [chapters] mirrors [_openPlayer]'s `episodes` list; [index] is
+  /// the tapped/resume chapter.
+  void _openReader(List<Episode> chapters, int index, MediaDetail detail) {
+    switch (detail.type) {
+      case ProviderType.novel:
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => NovelReaderScreen(
+              sourceId: widget.item.sourceId,
+              showId: widget.item.id,
+              showTitle: detail.title,
+              cover: detail.cover ?? widget.item.cover,
+              chapters: chapters,
+              startIndex: index,
+            ),
+          ),
+        );
+        return;
+      case ProviderType.manga:
+        // TODO(task-13): replace with a MangaReaderScreen push.
+        _snack('Manga reader coming in this branch');
+        return;
+      case ProviderType.anime:
+      case ProviderType.movie:
+        return; // unreachable — _openPlayer only calls this for reading types
+    }
   }
 
   /// Push the in-app trailer player for a resolved YouTube id.
@@ -880,6 +920,10 @@ class _DetailViewState extends State<_DetailView>
     final selectedSeason = state.selectedSeason;
     final eps = detail.episodes;
     final store = sl<ResumeStore>();
+    // Manga/novel: no player, no sub/dub, no video downloads — drives the
+    // Play→Read relabel and hides the download affordances below.
+    final isReading =
+        detail.type == ProviderType.novel || detail.type == ProviderType.manga;
     // Kick the (cached, once-per-malId) filler lookup for the "Filler" badge.
     _ensureFiller(detail.malId ?? item.malId);
     // Kick the (once-per-detail) tracker-progress lookup for grey-out.
@@ -899,7 +943,9 @@ class _DetailViewState extends State<_DetailView>
     final episodeNum = eps.isNotEmpty
         ? (eps[resumeIdx].number?.toInt() ?? resumeIdx + 1)
         : 1;
-    final buttonLabel = resume.hasResume ? 'Continue E$episodeNum' : 'Play';
+    final buttonLabel = isReading
+        ? 'Read'
+        : (resume.hasResume ? 'Continue E$episodeNum' : 'Play');
 
     // Cover / backdrop.
     final coverUrl = detail.cover ?? item.cover ?? '';
@@ -1071,20 +1117,26 @@ class _DetailViewState extends State<_DetailView>
               children: [
                 _PlayButton(
                   label: buttonLabel,
+                  icon: isReading
+                      ? Icons.menu_book_rounded
+                      : Icons.play_arrow_rounded,
                   onPressed: eps.isNotEmpty
                       ? () => _openPlayer(eps, resumeIdx, detail, category)
                       : null,
                 ),
-                const SizedBox(height: 10),
-                _DownloadButton(
-                  label: downloadLabel,
-                  onPressed: () => _openDownloadSheet(
-                    detail: detail,
-                    category: category,
-                    episodesBySeason: episodesBySeason,
-                    initialSeason: currentSeason,
+                // Reading downloads are out of scope for this plan.
+                if (!isReading) ...[
+                  const SizedBox(height: 10),
+                  _DownloadButton(
+                    label: downloadLabel,
+                    onPressed: () => _openDownloadSheet(
+                      detail: detail,
+                      category: category,
+                      episodesBySeason: episodesBySeason,
+                      initialSeason: currentSeason,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -1247,6 +1299,7 @@ class _DetailViewState extends State<_DetailView>
                 _openPlayer(eps, fullIndex, detail, category),
             onInfo: () => _tabController.animateTo(3),
             onDownload: (ep) => _downloadSingle(ep, detail, category),
+            showDownload: !isReading,
           ),
           // ── Cast ────────────────────────────────────────────────────────────
           _CastTab(
@@ -1666,9 +1719,16 @@ class _HeroCircleButton extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _PlayButton extends StatelessWidget {
-  const _PlayButton({required this.label, this.onPressed});
+  const _PlayButton({
+    required this.label,
+    this.onPressed,
+    this.icon = Icons.play_arrow_rounded,
+  });
   final String label;
   final VoidCallback? onPressed;
+
+  /// Reading types (manga/novel) show a book icon instead of the play glyph.
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -1687,11 +1747,7 @@ class _PlayButton extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.black,
-                  size: 26,
-                ),
+                Icon(icon, color: Colors.black, size: 26),
                 const SizedBox(width: 8),
                 Text(
                   label,
@@ -1950,6 +2006,7 @@ class _EpisodesTab extends StatefulWidget {
     required this.onOpen,
     required this.onInfo,
     required this.onDownload,
+    this.showDownload = true,
   });
 
   final List<Episode> eps;
@@ -1977,6 +2034,11 @@ class _EpisodesTab extends StatefulWidget {
 
   /// Per-episode download icon → opens the download sheet for that episode.
   final void Function(Episode ep) onDownload;
+
+  /// False for reading types (manga/novel) — chapters resolve to a reader,
+  /// not a video source, so the per-row download icon is hidden rather than
+  /// left as a dead/misleading tap target.
+  final bool showDownload;
 
   @override
   State<_EpisodesTab> createState() => _EpisodesTabState();
@@ -2157,6 +2219,7 @@ class _EpisodesTabState extends State<_EpisodesTab> {
             onDownload: () => widget.onDownload(ep),
             sourceId: widget.sourceId,
             showId: widget.showId,
+            showDownload: widget.showDownload,
           ),
         );
       },
@@ -2642,6 +2705,7 @@ class _EpisodeRow extends StatelessWidget {
     required this.sourceId,
     required this.showId,
     this.filler = false,
+    this.showDownload = true,
   });
 
   final Episode ep;
@@ -2656,6 +2720,7 @@ class _EpisodeRow extends StatelessWidget {
   final double fraction;
   final VoidCallback onTap;
   final VoidCallback onDownload;
+  final bool showDownload;
   final String sourceId;
   final String showId;
 
@@ -2868,7 +2933,9 @@ class _EpisodeRow extends StatelessWidget {
                 // Per-episode download icon (phone only). On TV it's redundant
                 // clutter next to the main Download button + hard to focus, so
                 // it's hidden — the TV path downloads via the Download action.
-                if (!sl<AppMode>().isTv) ...[
+                // Also hidden for reading types — a chapter has no video
+                // source to download.
+                if (!sl<AppMode>().isTv && showDownload) ...[
                   const SizedBox(width: 8),
                   _EpisodeDownloadIcon(
                     sourceId: sourceId,
