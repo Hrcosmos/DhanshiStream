@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -272,6 +273,19 @@ Future<void> settle(WidgetTester tester) async {
   }
 }
 
+/// Whether [url] is registered (pending/live/keepAlive) in Flutter's global
+/// image cache — proves `precacheImage`/`CachedNetworkImage` actually
+/// touched it, without needing the real fetch to complete (unreachable in
+/// this sandbox). `precacheImage` → `ImageProvider.resolve` →
+/// `ImageCache.putIfAbsent` runs synchronously, so no extra pump is needed
+/// between triggering it and checking here.
+Future<bool> _imageTracked(String url) async {
+  final key = await CachedNetworkImageProvider(
+    url,
+  ).obtainKey(ImageConfiguration.empty);
+  return PaintingBinding.instance.imageCache.statusForKey(key).tracked;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -281,6 +295,65 @@ void main() {
     late Directory dir;
     late _SpyReadHistory spyHistory;
     late AniyomiManager ani;
+
+    // flutter_cache_manager's cache-info repo (sqflite-backed on macOS/iOS/
+    // Android) throws `StateError: databaseFactory not initialized` the
+    // first time *any* CachedNetworkImage in this whole test process ever
+    // resolves — `flutter test` never registers a sqflite plugin, and
+    // there's no first-party way to fake `databaseFactory` without a new
+    // dependency. The failure is one-time only: flutter_cache_manager
+    // doesn't retry its metadata-store lookup after the first failure, so
+    // every image after this one silently falls straight through to a
+    // network fetch instead. Absorbing that failure here — before any real
+    // test runs, and with no widget/BuildContext needed, since
+    // ImageProvider.resolve() doesn't require one — means whichever test
+    // happens to run first doesn't pay for it. Unlike a first-position
+    // `testWidgets`, `setUpAll` runs once for the group regardless of
+    // `--name` filtering, so this doesn't create an ordering dependency the
+    // way an explicit warm-up test would.
+    setUpAll(() async {
+      TestWidgetsFlutterBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (call) async => '/tmp',
+          );
+      final completer = Completer<void>();
+      // runZonedGuarded, not a plain try/catch: the databaseFactory
+      // StateError is thrown from deep inside flutter_cache_manager's own
+      // detached stream-subscription chain, not from anything this function
+      // directly awaits — a try/catch here doesn't see it. Only a zone error
+      // handler around where the resolve() call *starts* that chain catches
+      // it.
+      runZonedGuarded(
+        () {
+          final stream = const CachedNetworkImageProvider(
+            'https://example.com/warmup.jpg',
+          ).resolve(ImageConfiguration.empty);
+          late ImageStreamListener listener;
+          listener = ImageStreamListener(
+            (image, sync) {
+              stream.removeListener(listener);
+              if (!completer.isCompleted) completer.complete();
+            },
+            onError: (error, stack) {
+              stream.removeListener(listener);
+              if (!completer.isCompleted) completer.complete();
+            },
+          );
+          stream.addListener(listener);
+        },
+        (error, stack) {
+          // Expected: the one-time databaseFactory failure. Swallow it.
+          if (!completer.isCompleted) completer.complete();
+        },
+      );
+      // Best-effort: don't hang the whole suite if this never resolves for
+      // some unrelated reason.
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {},
+      );
+    });
 
     setUp(() async {
       // CachedNetworkImage (flutter_cache_manager) hits path_provider to find
@@ -360,33 +433,6 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
     }
-
-    // flutter_cache_manager's cache-info repo (sqflite-backed on macOS/iOS/
-    // Android) throws `StateError: databaseFactory not initialized` the
-    // first time *any* CachedNetworkImage in this whole test process ever
-    // resolves — `flutter test` never registers a sqflite plugin, and there's
-    // no first-party way to fake `databaseFactory` without a new dependency.
-    // The failure is one-time only: flutter_cache_manager doesn't retry its
-    // metadata-store lookup after the first failure, so every image after
-    // this one silently falls straight through to a network fetch instead.
-    // Deliberately eating that one-time failure here, in its own test, keeps
-    // every other test in this file clean — see the task report for the
-    // full investigation (this was verified empirically, not assumed).
-    testWidgets(
-      "warm-up: absorb flutter_cache_manager's one-time cache-store init "
-      'failure before any real test runs',
-      (tester) async {
-        await tester.pumpWidget(
-          MaterialApp(
-            home: CachedNetworkImage(
-              imageUrl: 'https://example.com/warmup.jpg',
-            ),
-          ),
-        );
-        await settle(tester);
-        await tester.pumpWidget(const SizedBox());
-      },
-    );
 
     testWidgets('ltr direction renders a non-reversed PageView', (
       tester,
@@ -578,24 +624,171 @@ void main() {
         await tester.pumpWidget(harness());
         await settle(tester);
 
-        final cache = PaintingBinding.instance.imageCache;
-        Future<bool> tracked(int i) async {
-          final key = await CachedNetworkImageProvider(
-            sixPages[i].url,
-          ).obtainKey(ImageConfiguration.empty);
-          return cache.statusForKey(key).tracked;
-        }
-
         // preloadWindow(0, 6) == [1, 2, 3] — those, and only those, should be
         // registered in Flutter's global image cache.
-        expect(await tracked(1), isTrue, reason: 'page 1 should be preloaded');
-        expect(await tracked(2), isTrue, reason: 'page 2 should be preloaded');
-        expect(await tracked(3), isTrue, reason: 'page 3 should be preloaded');
         expect(
-          await tracked(4),
+          await _imageTracked(sixPages[1].url),
+          isTrue,
+          reason: 'page 1 should be preloaded',
+        );
+        expect(
+          await _imageTracked(sixPages[2].url),
+          isTrue,
+          reason: 'page 2 should be preloaded',
+        );
+        expect(
+          await _imageTracked(sixPages[3].url),
+          isTrue,
+          reason: 'page 3 should be preloaded',
+        );
+        expect(
+          await _imageTracked(sixPages[4].url),
           isFalse,
           reason: 'page 4 is outside the 3-page preload window',
         );
+
+        await disposeHarness(tester);
+      },
+    );
+
+    // ── Slider drag throttling (paged + vertical) ────────────────────────
+    //
+    // _seekToPage (Slider.onChanged) jumps the real PageController/
+    // ScrollController on every drag tick so the page stays visually in
+    // sync with the thumb — but PageController.jumpToPage synchronously
+    // fires onPageChanged, and ScrollController.jumpTo synchronously
+    // notifies its listeners, both of which are wired to _onPageChanged/
+    // _onVerticalScroll. Without the `_seeking` guard, that would preload
+    // and save on every tick instead of once, on release. These two tests
+    // drive the *real* Slider widget's own callbacks (not
+    // PageController.jumpToPage directly, which would miss this regression
+    // entirely) across several intermediate ticks, then release.
+    //
+    // The tick values are deliberately NOT a simple sweep toward the final
+    // page: PageView/ListView both build a small cache-extent of pages
+    // *adjacent* to whichever page is current — entirely separate from, and
+    // legitimate regardless of, `_preload`. A leaked `_preload` call at an
+    // intermediate tick would touch a window 1-3 pages further out than
+    // that adjacency reaches, so the intermediate ticks are clustered near
+    // the start (0-3) and the release is far away (15, in a 20-page
+    // chapter) — isolating "would only be tracked if an intermediate tick
+    // leaked a preload" (pages 5-6) from "tracked because it's merely
+    // adjacent to a visited page" (pages 0-4, 14-16) or "tracked because
+    // it's the final commit's own window" (16-18).
+    testWidgets(
+      'dragging the slider across several pages preloads/saves exactly '
+      'once, on release — not per tick (paged)',
+      (tester) async {
+        await tester.runAsync(() => sl<ReaderPrefs>().setDirection('ltr'));
+        final twentyPages = pages(20);
+        ani.register(_FakeReadingProvider('ani:m', {'u1': twentyPages}));
+
+        await tester.pumpWidget(harness());
+        await settle(tester);
+        await tester.tapAt(const Offset(400, 300)); // reveal chrome
+        await settle(tester);
+
+        // Clean slate: only what happens during the drag below should show
+        // up in the cache assertions (the initial chapter load already
+        // preloaded a window of its own).
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        final savesBefore = spyHistory.flushCalls.length;
+
+        final slider = tester.widget<Slider>(find.byType(Slider));
+        slider.onChangeStart!(0);
+        for (final v in [1.0, 2.0, 3.0]) {
+          slider.onChanged!(v);
+          await tester.pump();
+        }
+        slider.onChangeEnd!(15.0);
+        await settle(tester);
+
+        expect(
+          spyHistory.flushCalls.length - savesBefore,
+          1,
+          reason: 'one save for the whole drag, not one per tick',
+        );
+        // preloadWindow(15, 20) == [16, 17, 18] — the final position only.
+        expect(await _imageTracked(twentyPages[16].url), isTrue);
+        expect(await _imageTracked(twentyPages[17].url), isTrue);
+        expect(await _imageTracked(twentyPages[18].url), isTrue);
+        // preloadWindow(2, 20) == [3, 4, 5] and preloadWindow(3, 20) ==
+        // [4, 5, 6] — page 5/6 are only reachable via one of those leaking.
+        expect(
+          await _imageTracked(twentyPages[5].url),
+          isFalse,
+          reason:
+              'would be tracked if the page-2 mid-drag tick had leaked '
+              'a preload',
+        );
+        expect(
+          await _imageTracked(twentyPages[6].url),
+          isFalse,
+          reason:
+              'would be tracked if the page-3 mid-drag tick had leaked '
+              'a preload',
+        );
+
+        await disposeHarness(tester);
+      },
+    );
+
+    // Vertical mode's negative ("did an intermediate tick leak a preload")
+    // check can't reuse the paged test's ImageCache-tracking trick: measured
+    // directly (a throwaway diagnostic jumping ListView's own controller to
+    // an arbitrary offset, since deleted), ListView's cache-extent around a
+    // 200px-tall item spans roughly 7 items either side of wherever it's
+    // scrolled to — versus PageView's ±1 for a full-screen-width item. That
+    // 7-item natural window always swallows `_preload`'s 3-page window
+    // mathematically, for any chapter length or tick spacing, so a leaked
+    // preload and normal ListView windowing are indistinguishable via the
+    // image cache here. The save-count assertion below is still fully
+    // reliable (ReadHistory.save is entirely our own code, no Flutter
+    // internals to confound it) and proves the *_seeking* guard is reached
+    // and works for this listener; the same guard, checked immediately
+    // above the save-guard in `_onVerticalScroll`, protects `_preload` —
+    // and the paged test above already proves that guard mechanism
+    // suppresses a real leak when the signal *can* be isolated.
+    testWidgets(
+      'dragging the slider across several pages saves exactly once, on '
+      'release — not per tick (vertical); preload fires for the final '
+      'position',
+      (tester) async {
+        await tester.runAsync(() => sl<ReaderPrefs>().setDirection('vertical'));
+        final twentyPages = pages(20);
+        ani.register(_FakeReadingProvider('ani:m', {'u1': twentyPages}));
+
+        await tester.pumpWidget(harness());
+        await settle(tester);
+        await tester.tapAt(const Offset(400, 300)); // reveal chrome
+        await settle(tester);
+
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        final savesBefore = spyHistory.flushCalls.length;
+
+        final slider = tester.widget<Slider>(find.byType(Slider));
+        slider.onChangeStart!(0);
+        for (final v in [1.0, 2.0, 3.0]) {
+          slider.onChanged!(v);
+          await tester.pump();
+        }
+        slider.onChangeEnd!(15.0);
+        await settle(tester);
+
+        expect(
+          spyHistory.flushCalls.length - savesBefore,
+          1,
+          reason: 'one save for the whole drag, not one per tick',
+        );
+        // preloadWindow(15, 20) == [16, 17, 18] — proves _commitSeek's
+        // preload actually fires (positive check; see the comment above for
+        // why a negative "nothing else got preloaded" check isn't reliable
+        // here).
+        expect(await _imageTracked(twentyPages[16].url), isTrue);
+        expect(await _imageTracked(twentyPages[17].url), isTrue);
+        expect(await _imageTracked(twentyPages[18].url), isTrue);
 
         await disposeHarness(tester);
       },

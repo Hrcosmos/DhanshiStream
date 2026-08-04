@@ -51,6 +51,16 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
   Offset? _lastDoubleTapPos;
   final Map<int, TransformationController> _zoomControllers = {};
 
+  /// True while the bottom-bar page slider is being dragged. `_seekToPage`
+  /// jumps the real `PageController`/`ScrollController` on every drag tick
+  /// (so the page/list stays visually in sync with the thumb) — but a
+  /// `PageController.jumpToPage`/`ScrollController.jumpTo` synchronously
+  /// re-fires `onPageChanged`/the scroll listener, which would otherwise
+  /// call `_preload`/`_saveProgress` on every tick too. This flag makes
+  /// those two listeners skip that work while a drag is live; `_commitSeek`
+  /// (`onChangeEnd`) does it exactly once, when the drag settles.
+  bool _seeking = false;
+
   @override
   void initState() {
     super.initState();
@@ -149,6 +159,9 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
 
   void _onPageChanged(int index) {
     setState(() => _pageIndex = index);
+    // A slider drag drives this too (jumpToPage fires onPageChanged) —
+    // _commitSeek does the preload/save exactly once when the drag ends.
+    if (_seeking) return;
     final pages = _pages;
     if (pages != null) _preload(index, pages);
     _saveProgress(flush: false);
@@ -167,8 +180,12 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     );
     if (estimated != _pageIndex) {
       setState(() => _pageIndex = estimated);
-      _preload(estimated, pages);
+      if (!_seeking) _preload(estimated, pages);
     }
+    // Same reasoning as _onPageChanged: a slider drag also drives this via
+    // ScrollController.jumpTo, and _commitSeek is the single source of
+    // truth for the preload/save once the drag ends.
+    if (_seeking) return;
 
     // Throttle routine in-chapter saves to ~once/second, same as the novel
     // reader's scroll listener.
@@ -267,8 +284,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
   }
 
   /// Slider drag settled — preload around the page it landed on and persist
-  /// it, exactly once per drag.
+  /// it, exactly once per drag. Clears [_seeking] first so this is the only
+  /// preload/save that fires for the whole drag.
   void _commitSeek(int page) {
+    _seeking = false;
     final pages = _pages;
     if (pages == null || pages.isEmpty) return;
     final clamped = clampPageIndex(page, pages.length);
@@ -610,6 +629,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                         max: (pageCount - 1).toDouble(),
                         divisions: pageCount - 1,
                         activeColor: AppColors.accent,
+                        onChangeStart: (_) => _seeking = true,
                         onChanged: (v) => _seekToPage(v.round()),
                         onChangeEnd: (v) => _commitSeek(v.round()),
                       ),
