@@ -222,7 +222,9 @@ class SimklService extends ChangeNotifier implements Tracker {
     int? tmdbId,
     bool tmdbIsTv = false,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   }) async {
+    if (kind == MediaKind.manga) return; // Simkl has no manga/novel API
     if (!isConnected || !autoSync) return;
     // Movies are watched-once; "watching" is meaningless — wait for completion.
     final hasMovieId = tmdbId != null || (imdbId != null && imdbId.isNotEmpty);
@@ -238,7 +240,9 @@ class SimklService extends ChangeNotifier implements Tracker {
     bool tmdbIsTv = false,
     String? imdbId,
     required int episode,
+    MediaKind kind = MediaKind.anime,
   }) async {
+    if (kind == MediaKind.manga) return; // Simkl has no manga/novel API
     if (!isConnected || !autoSync || episode <= 0) return;
     final t = _target(malId, tmdbId, tmdbIsTv, imdbId);
     if (t == null) return;
@@ -262,7 +266,9 @@ class SimklService extends ChangeNotifier implements Tracker {
     bool tmdbIsTv = false,
     String? imdbId,
     required WatchStatus status,
+    MediaKind kind = MediaKind.anime,
   }) async {
+    if (kind == MediaKind.manga) return; // Simkl has no manga/novel API
     if (!isConnected) return;
     await _addToList(_target(malId, tmdbId, tmdbIsTv, imdbId), status.simkl);
   }
@@ -274,7 +280,9 @@ class SimklService extends ChangeNotifier implements Tracker {
     int? tmdbId,
     bool tmdbIsTv = false,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   }) async {
+    if (kind == MediaKind.manga) return; // Simkl has no manga/novel API
     if (!isConnected) return;
     final t = _target(malId, tmdbId, tmdbIsTv, imdbId);
     if (t == null) return;
@@ -418,7 +426,9 @@ class SimklService extends ChangeNotifier implements Tracker {
     bool tmdbIsTv = false,
     String? imdbId,
     String? pinnedId,
+    MediaKind kind = MediaKind.anime,
   }) async {
+    if (kind == MediaKind.manga) return null; // Simkl has no manga/novel API
     if (!isConnected) return null;
     // Simkl has no cheap single-item status read, so filter the anime library
     // (matches by MAL id, or a pinned Simkl id). Movies/TV return null — Simkl
@@ -454,7 +464,9 @@ class SimklService extends ChangeNotifier implements Tracker {
     WatchStatus? status,
     double? score,
     int? progress,
+    MediaKind kind = MediaKind.anime,
   }) async {
+    if (kind == MediaKind.manga) return; // Simkl has no manga/novel API
     if (!isConnected) return;
     final pinned = int.tryParse(pinnedId ?? '');
     final ({String bucket, Map<String, dynamic> ids})? target = pinned != null
@@ -478,7 +490,11 @@ class SimklService extends ChangeNotifier implements Tracker {
   }
 
   @override
-  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+  Future<List<TrackerSearchResult>> searchEntries(
+    String query, {
+    MediaKind kind = MediaKind.anime,
+  }) async {
+    if (kind == MediaKind.manga) return const []; // Simkl has no manga/novel API
     if (query.trim().isEmpty) return const [];
     try {
       final res = await _dio.get<dynamic>(

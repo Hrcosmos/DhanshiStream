@@ -20,6 +20,7 @@ class TrackerHub {
     int? tmdbId,
     bool tmdbIsTv = false,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (IncognitoMode.on) return; // incognito: pause auto-tracking
     await _fan(
@@ -29,6 +30,7 @@ class TrackerHub {
         tmdbId: tmdbId,
         tmdbIsTv: tmdbIsTv,
         imdbId: imdbId,
+        kind: kind,
       ),
     );
   }
@@ -40,6 +42,7 @@ class TrackerHub {
     bool tmdbIsTv = false,
     String? imdbId,
     required int episode,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (IncognitoMode.on) return; // incognito: pause auto-scrobble
     await _fan(
@@ -50,6 +53,7 @@ class TrackerHub {
         tmdbIsTv: tmdbIsTv,
         imdbId: imdbId,
         episode: episode,
+        kind: kind,
       ),
     );
   }
@@ -61,6 +65,7 @@ class TrackerHub {
     bool tmdbIsTv = false,
     String? imdbId,
     required WatchStatus status,
+    MediaKind kind = MediaKind.anime,
   }) => _fan(
     (t) => t.setStatus(
       malId: malId,
@@ -69,6 +74,7 @@ class TrackerHub {
       tmdbIsTv: tmdbIsTv,
       imdbId: imdbId,
       status: status,
+      kind: kind,
     ),
   );
 
@@ -78,6 +84,7 @@ class TrackerHub {
     int? tmdbId,
     bool tmdbIsTv = false,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   }) => _fan(
     (t) => t.removeFromList(
       malId: malId,
@@ -85,6 +92,7 @@ class TrackerHub {
       tmdbId: tmdbId,
       tmdbIsTv: tmdbIsTv,
       imdbId: imdbId,
+      kind: kind,
     ),
   );
 
@@ -101,6 +109,7 @@ class TrackerHub {
     bool tmdbIsTv = false,
     String? imdbId,
     Map<String, String>? pinnedIds,
+    MediaKind kind = MediaKind.anime,
   }) async {
     final results = await Future.wait(
       connected.map((t) async {
@@ -112,6 +121,7 @@ class TrackerHub {
             tmdbIsTv: tmdbIsTv,
             imdbId: imdbId,
             pinnedId: pinnedIds?[t.displayName],
+            kind: kind,
           );
         } catch (_) {
           return null;
@@ -137,6 +147,7 @@ class TrackerHub {
     WatchStatus? status,
     double? score,
     int? progress,
+    MediaKind kind = MediaKind.anime,
   }) => _fan(
     (t) => t.updateEntry(
       malId: malId,
@@ -148,16 +159,20 @@ class TrackerHub {
       status: status,
       score: score,
       progress: progress,
+      kind: kind,
     ),
   );
 
   /// Candidate matches from every connected tracker (the match-fixer), in
   /// connection order.
-  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+  Future<List<TrackerSearchResult>> searchEntries(
+    String query, {
+    MediaKind kind = MediaKind.anime,
+  }) async {
     final lists = await Future.wait(
       connected.map((t) async {
         try {
-          return await t.searchEntries(query);
+          return await t.searchEntries(query, kind: kind);
         } catch (_) {
           return const <TrackerSearchResult>[];
         }

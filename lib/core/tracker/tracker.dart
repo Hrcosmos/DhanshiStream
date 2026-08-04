@@ -3,6 +3,12 @@ import 'package:flutter/foundation.dart';
 import '../models/media_item.dart';
 import '../models/watch_status.dart';
 
+/// Which list a tracker write/read targets. Anime covers today's anime +
+/// movie/TV app unchanged. Novels map to [manga] at this boundary — AniList
+/// and MyAnimeList both file light novels under their manga list (there is no
+/// separate novel list to target), so a third value here would be a lie.
+enum MediaKind { anime, manga }
+
 /// One entry of the user's library read back from a tracker (AniList/MAL/Simkl).
 /// [item] is a METADATA STUB — title/cover/ids only, with `url`/`sourceId` empty
 /// (no provider is attached; a playable source is resolved by title on tap).
@@ -35,6 +41,7 @@ class TrackerEntry {
     this.score,
     this.progress,
     this.maxEpisodes,
+    this.chapters,
     this.nextAiringEpisode,
     this.nextAiringAt,
   });
@@ -50,11 +57,15 @@ class TrackerEntry {
   /// User score on a 0–10 scale (null/0 = unrated).
   final double? score;
 
-  /// Episodes watched.
+  /// Progress — episodes watched for [MediaKind.anime], chapters read for
+  /// [MediaKind.manga].
   final int? progress;
 
-  /// Total episodes (null/0 = unknown or a movie).
+  /// Total episodes (null/0 = unknown or a movie). Anime only.
   final int? maxEpisodes;
+
+  /// Total chapters (null/0 = unknown or ongoing). Manga/novel only.
+  final int? chapters;
 
   /// The next episode to air + when, while the show is still airing.
   final int? nextAiringEpisode;
@@ -107,16 +118,20 @@ abstract interface class Tracker implements Listenable {
 
   /// Mark a title as currently-watching (called when playback starts). Anime is
   /// identified by [malId]/[title]; movies/series by [tmdbId] (+ [tmdbIsTv]) or,
-  /// failing that, [imdbId] (Simkl accepts an imdb id).
+  /// failing that, [imdbId] (Simkl accepts an imdb id). [kind] selects which
+  /// list this targets (anime vs. manga/novel); defaults to anime so every
+  /// existing call site is unaffected.
   Future<void> markWatching({
     int? malId,
     String? title,
     int? tmdbId,
     bool tmdbIsTv,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   });
 
-  /// Record that [episode] was watched (for a movie, episode is ignored).
+  /// Record that [episode] was watched (for a movie, episode is ignored). For
+  /// [MediaKind.manga], [episode] is the chapter number.
   Future<void> scrobble({
     int? malId,
     String? title,
@@ -124,6 +139,7 @@ abstract interface class Tracker implements Listenable {
     bool tmdbIsTv,
     String? imdbId,
     required int episode,
+    MediaKind kind = MediaKind.anime,
   });
 
   /// Set an explicit library status (from the "Add to List" sheet).
@@ -134,6 +150,7 @@ abstract interface class Tracker implements Listenable {
     bool tmdbIsTv,
     String? imdbId,
     required WatchStatus status,
+    MediaKind kind = MediaKind.anime,
   });
 
   /// Remove the title from the user's list.
@@ -143,6 +160,7 @@ abstract interface class Tracker implements Listenable {
     int? tmdbId,
     bool tmdbIsTv,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   });
 
   /// Read back the user's full library from this tracker (anime; Simkl may also
@@ -162,6 +180,7 @@ abstract interface class Tracker implements Listenable {
     bool tmdbIsTv,
     String? imdbId,
     String? pinnedId,
+    MediaKind kind = MediaKind.anime,
   });
 
   /// Write status/score/progress together for ONE title (the sync sheet's
@@ -177,11 +196,15 @@ abstract interface class Tracker implements Listenable {
     WatchStatus? status,
     double? score,
     int? progress,
+    MediaKind kind = MediaKind.anime,
   });
 
   /// Search this tracker for candidate matches (the match-fixer). Returns `[]`
   /// when disconnected, the query is empty, or on any error — never throws.
-  Future<List<TrackerSearchResult>> searchEntries(String query);
+  Future<List<TrackerSearchResult>> searchEntries(
+    String query, {
+    MediaKind kind = MediaKind.anime,
+  });
 
   /// The full persisted session as a plain JSON-able map, or null if not
   /// connected. Used by the TV relay to move a session between devices.

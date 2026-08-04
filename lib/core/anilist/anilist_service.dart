@@ -192,6 +192,7 @@ class AniListService extends ChangeNotifier implements Tracker {
     bool tmdbIsTv = false,
     String? imdbId,
     required int episode,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (!isConnected || !autoSync || episode <= 0) return;
     if (malId == null && (title == null || title.trim().isEmpty)) return;
@@ -266,6 +267,7 @@ class AniListService extends ChangeNotifier implements Tracker {
     bool tmdbIsTv = false,
     String? imdbId,
     required WatchStatus status,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (!isConnected) return;
     final media = await _resolveMedia(malId, title);
@@ -295,6 +297,7 @@ class AniListService extends ChangeNotifier implements Tracker {
     int? tmdbId,
     bool tmdbIsTv = false,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (!isConnected || !autoSync) return;
     if (malId == null && (title == null || title.trim().isEmpty)) return;
@@ -403,6 +406,7 @@ class AniListService extends ChangeNotifier implements Tracker {
     int? tmdbId,
     bool tmdbIsTv = false,
     String? imdbId,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (!isConnected) return;
     final media = await _resolveMedia(malId, title);
@@ -421,6 +425,7 @@ class AniListService extends ChangeNotifier implements Tracker {
     bool tmdbIsTv = false,
     String? imdbId,
     String? pinnedId,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (!isConnected) return null;
     final mediaId =
@@ -460,6 +465,7 @@ class AniListService extends ChangeNotifier implements Tracker {
     WatchStatus? status,
     double? score,
     int? progress,
+    MediaKind kind = MediaKind.anime,
   }) async {
     if (!isConnected) return;
     final mediaId =
@@ -479,7 +485,10 @@ class AniListService extends ChangeNotifier implements Tracker {
   }
 
   @override
-  Future<List<TrackerSearchResult>> searchEntries(String query) async {
+  Future<List<TrackerSearchResult>> searchEntries(
+    String query, {
+    MediaKind kind = MediaKind.anime,
+  }) async {
     if (query.trim().isEmpty) return const [];
     final results = await _api.searchMedia(query);
     return [
