@@ -4,6 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
+import '../../core/mode/content_mode.dart';
+import '../../core/mode/content_mode_cubit.dart';
 import '../../core/models/media_detail.dart';
 import '../../core/models/media_item.dart';
 import '../../core/models/provider_info.dart';
@@ -111,6 +113,15 @@ class _SearchViewState extends State<_SearchView> {
   final _myList = sl<MyListStore>();
   final _history = sl<SearchHistory>();
   final _searchPrefs = sl<SearchPrefs>();
+
+  /// [_repo.loadedSources] narrowed to the active content mode — a no-op in
+  /// anime mode (anime+movie sources both pass), so search shows exactly the
+  /// same sources it does today there.
+  List<({String id, String name})> get _modeSources => filterSourcesForMode(
+    {for (final s in _repo.loadedSources) s.id: s},
+    sl<ContentModeCubit>().state,
+    (s) => sourceTypeOf(s.id),
+  ).values.toList();
 
   @override
   void initState() {
@@ -414,7 +425,7 @@ class _SearchViewState extends State<_SearchView> {
                     state.status != SearchStatus.success &&
                     state.suggestions.isNotEmpty;
                 final tabs = ecosystemTabsFor(
-                  _repo.loadedSources.map((s) => s.id),
+                  _modeSources.map((s) => s.id),
                 );
                 if (state.currentSourceOnly ||
                     showingSuggestions ||
@@ -934,7 +945,7 @@ class _SearchViewState extends State<_SearchView> {
     final pending =
         (state.currentSourceOnly || state.sourceFilter != kAllSources)
         ? const <({String id, String name})>[]
-        : _repo.loadedSources
+        : _modeSources
               .where(
                 (s) =>
                     prefs.isIncluded(s.id) &&
@@ -1468,7 +1479,10 @@ class _SearchFilterSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final buckets = categorizedSources();
+    final buckets = filterBucketsForMode(
+      categorizedSources(),
+      sl<ContentModeCubit>().state,
+    );
     final prefs = sl<SearchSourcePrefs>();
     final sections =
         <

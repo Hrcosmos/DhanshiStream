@@ -362,9 +362,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Schedule'), findsOneWidget);
 
-    // setMode awaits a real Hive write before it emits, so it needs the real
-    // event loop — the fake-async zone testWidgets runs in never lets it
-    // resolve on its own (see mode_switcher_test.dart for the same fix).
+    // setMode emits synchronously now, but its Hive writes are still real,
+    // fire-and-forget I/O — FakeAsync (which testWidgets runs in) never
+    // drains that on its own, and a dangling write hangs tearDown's
+    // Hive.close(). runAsync gives it a real event loop turn to finish.
     await tester.runAsync(() => contentMode.setMode(ContentMode.manga));
     await tester.pumpAndSettle();
 
@@ -382,6 +383,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 1);
 
+    // See the runAsync note above — setMode's fire-and-forget Hive writes
+    // need a real event loop turn or tearDown's Hive.close() hangs.
     await tester.runAsync(() => contentMode.setMode(ContentMode.manga));
     await tester.pumpAndSettle();
 

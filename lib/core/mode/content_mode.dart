@@ -28,3 +28,14 @@ extension ContentModeX on ContentMode {
     ContentMode.novel => t == ProviderType.novel,
   };
 }
+
+/// Filters a source map to the entries visible in [mode]. In anime mode this
+/// is a no-op over an anime/movie-only source set — the hard requirement that
+/// today's anime-mode source list never changes.
+Map<String, T> filterSourcesForMode<T>(
+  Map<String, T> sources,
+  ContentMode mode,
+  ProviderType Function(T) typeOf,
+) => Map.fromEntries(
+  sources.entries.where((e) => mode.matchesProvider(typeOf(e.value))),
+);

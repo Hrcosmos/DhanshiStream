@@ -1,9 +1,24 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:watch_app/core/di/injector.dart' show sl;
 import 'package:watch_app/core/mode/content_mode.dart';
 import 'package:watch_app/core/mode/content_mode_cubit.dart';
+import 'package:watch_app/core/repository/source_repository.dart';
 import 'package:watch_app/core/state/active_source_cubit.dart';
+
+/// Minimal [SourceRepository] stub — only [loadedSources] is used by
+/// [ContentModeCubit], the rest just isn't called from these tests.
+class _FakeSourceRepository implements SourceRepository {
+  _FakeSourceRepository(List<String> ids)
+      : loadedSources = [for (final id in ids) (id: id, name: id)];
+
+  @override
+  noSuchMethod(Invocation i) => super.noSuchMethod(i);
+
+  @override
+  final List<({String id, String name})> loadedSources;
+}
 
 void main() {
   late Directory dir;
@@ -16,6 +31,7 @@ void main() {
   tearDown(() async {
     await Hive.close();
     await dir.delete(recursive: true);
+    if (sl.isRegistered<SourceRepository>()) sl.unregister<SourceRepository>();
   });
 
   test('defaults to anime and persists mode', () async {
@@ -45,4 +61,72 @@ void main() {
     await cubit.setMode(ContentMode.manga);
     expect(active.state, 'js:mangasrc'); // manga source restored
   });
+
+  // ── B: stale remembered source ─────────────────────────────────────────
+  test('does not restore a remembered source that no longer exists', () async {
+    await ActiveSourceCubit.init();
+    final active = ActiveSourceCubit(box: Hive.box(ActiveSourceCubit.boxName));
+    final cubit = await ContentModeCubit.create(active);
+
+    active.setSource('js:animesrc');
+    await cubit.setMode(ContentMode.manga);
+    active.setSource('js:stale_manga_src');
+    await cubit.setMode(ContentMode.anime); // parks js:stale_manga_src under src.manga
+
+    // The manga source was uninstalled since it was parked.
+    sl.registerSingleton<SourceRepository>(
+      _FakeSourceRepository(['js:animesrc']),
+    );
+
+    await cubit.setMode(ContentMode.manga);
+    // Left alone rather than pointed at a source that no longer loads.
+    expect(active.state, 'js:animesrc');
+  });
+
+  test('a remembered source that still exists IS restored', () async {
+    await ActiveSourceCubit.init();
+    final active = ActiveSourceCubit(box: Hive.box(ActiveSourceCubit.boxName));
+    final cubit = await ContentModeCubit.create(active);
+
+    active.setSource('js:animesrc');
+    await cubit.setMode(ContentMode.manga);
+    active.setSource('js:mangasrc');
+    await cubit.setMode(ContentMode.anime); // parks js:mangasrc under src.manga
+
+    sl.registerSingleton<SourceRepository>(
+      _FakeSourceRepository(['js:animesrc', 'js:mangasrc']),
+    );
+
+    await cubit.setMode(ContentMode.manga);
+    expect(active.state, 'js:mangasrc');
+  });
+
+  // ── C.3: ordering trap — the outgoing source must be captured BEFORE the
+  // incoming mode's source is restored, or a switch parks the newly-restored
+  // source under the outgoing mode's key instead of what was really active
+  // there. A plain anime->manga->anime check doesn't surface this on its own
+  // (the corruption lands in the mode you just left, not the one you land
+  // on) — the giveaway only shows up on the *next* switch back, so this test
+  // goes one hop further to actually catch a reordering regression.
+  test(
+    'switching anime -> manga -> anime restores the exact anime source, '
+    'and a further -> manga hop proves the manga source was not clobbered',
+    () async {
+      await ActiveSourceCubit.init();
+      final active =
+          ActiveSourceCubit(box: Hive.box(ActiveSourceCubit.boxName));
+      final cubit = await ContentModeCubit.create(active);
+
+      active.setSource('js:animesrc');
+      final originalAnimeSource = active.state;
+
+      await cubit.setMode(ContentMode.manga);
+      active.setSource('js:mangasrc');
+      await cubit.setMode(ContentMode.anime);
+      expect(active.state, originalAnimeSource); // anime source restored
+
+      await cubit.setMode(ContentMode.manga);
+      expect(active.state, 'js:mangasrc'); // manga source wasn't clobbered
+    },
+  );
 }

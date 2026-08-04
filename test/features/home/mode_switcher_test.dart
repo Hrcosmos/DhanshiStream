@@ -45,9 +45,12 @@ void main() {
     expect(find.text('Manga'), findsOneWidget);
     expect(find.text('Novel'), findsOneWidget);
 
-    // ContentModeCubit.setMode awaits a real Hive write before it emits, so
-    // the tap's fire-and-forget async chain needs the real event loop (the
-    // fake-async zone testWidgets runs in never lets it resolve on its own).
+    // setMode emits synchronously now (persistence is fire-and-forget), so
+    // the mode change itself doesn't need the real event loop — but the
+    // fire-and-forget Hive writes are real I/O, and FakeAsync (which
+    // testWidgets runs in) never drains that on its own; without runAsync
+    // here those writes dangle and tearDown's Hive.close() hangs waiting on
+    // them.
     await tester.runAsync(() async {
       await tester.tap(find.text('Manga'));
       await Future<void>.delayed(const Duration(milliseconds: 100));

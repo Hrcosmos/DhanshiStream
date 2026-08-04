@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../aniyomi/aniyomi_provider.dart';
 import '../di/injector.dart';
+import '../mode/content_mode.dart';
+import '../mode/content_mode_cubit.dart';
 import '../playback/pinned_sources.dart';
 import '../models/provider_info.dart';
 import '../playback/playback_prefs.dart';
@@ -117,6 +119,40 @@ SourceBuckets categorizedSources() {
   return (anime: anime, movies: movies, nsfw: nsfw);
 }
 
+/// Best-effort [ProviderType] for a source [id] — used to filter the picker
+/// and search by content mode. Mirrors [categorizedSources]' own anime/movie
+/// bucketing default, so an id with no cached manifest type still counts as
+/// anime (matching today's behavior when a mode filter isn't applied).
+ProviderType sourceTypeOf(String id) {
+  if (id.startsWith('cs:')) {
+    final p = sl<CloudStreamManager>().get(id);
+    return p is CloudStreamProvider ? p.providerType : ProviderType.anime;
+  }
+  if (id.startsWith('ani:')) return ProviderType.anime; // Aniyomi is video-only
+  final t = sl<ProviderRegistry>().typeOf(id);
+  if (t == null) return ProviderType.anime;
+  return ProviderType.values.asNameMap()[t] ?? ProviderType.anime;
+}
+
+/// Narrows a [SourceBuckets] to the rows visible in [mode]. A no-op in anime
+/// mode for today's real source sets (anime/movie are the only types in use),
+/// so the picker and search show exactly what they show today.
+SourceBuckets filterBucketsForMode(SourceBuckets buckets, ContentMode mode) {
+  List<({String id, String label, String? repo})> filter(
+    List<({String id, String label, String? repo})> rows,
+  ) => filterSourcesForMode(
+    {for (final r in rows) r.id: r},
+    mode,
+    (r) => sourceTypeOf(r.id),
+  ).values.toList();
+
+  return (
+    anime: filter(buckets.anime),
+    movies: filter(buckets.movies),
+    nsfw: filter(buckets.nsfw),
+  );
+}
+
 /// A compact pill button that shows the active source and opens a
 /// bottom-sheet picker when tapped. The selectable list is built
 /// dynamically from the installed-and-enabled providers in
@@ -224,7 +260,7 @@ class SourceSwitcher extends StatelessWidget {
   /// labels + repo tags). Public so other screens (e.g. Settings → Active
   /// source) can present the exact same picker as the Home header.
   void showPicker(BuildContext context) {
-    final b = _buckets();
+    final b = filterBucketsForMode(_buckets(), sl<ContentModeCubit>().state);
 
     // The "All" tab is the tallest; size the sheet to it (so it's compact for a
     // few sources) but cap at 85% screen — TabBarView needs a bounded height.
