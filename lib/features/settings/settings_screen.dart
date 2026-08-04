@@ -247,6 +247,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _pickBatchDownloadStyle() async {
+    final prefs = sl<PlaybackPrefs>();
+    // (id, label, blurb)
+    const options = <(String, String, String)>[
+      (
+        'classic',
+        'Classic',
+        'The full sheet with a per-episode thumbnail grid.',
+      ),
+      ('minimal', 'Minimal', 'A number wheel — pick how many episodes to grab.'),
+    ];
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textTertiary.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Batch download style', style: AppText.headline),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'The sheet shown when you download a whole season. Both '
+                  'download exactly the same — only the picker looks different.',
+                  style: AppText.caption,
+                ),
+              ),
+            ),
+            const Divider(color: AppColors.hairline, height: 1),
+            for (final o in options)
+              ListTile(
+                title: Text(o.$2, style: AppText.body),
+                subtitle: Text(o.$3, style: AppText.caption),
+                trailing: o.$1 == prefs.batchDownloadStyle
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => Navigator.pop(ctx, o.$1),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await prefs.setBatchDownloadStyle(picked);
+    if (mounted) setState(() {});
+  }
+
   String _activeLabel(String activeId) {
     if (activeId.startsWith('cs:')) {
       return _csManager.get(activeId)?.displayName ?? activeId;
@@ -676,6 +744,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         keywords: 'search layout grid list results view interface',
         trailing: _value(sl<SearchPrefs>().layout.label),
         onTap: _pickSearchLayout,
+      ),
+      _SettingsEntry(
+        section: 'Interface',
+        icon: Icons.download_rounded,
+        title: 'Batch download style',
+        subtitle: 'How the multi-episode sheet looks',
+        keywords:
+            'batch download style sheet minimal classic wheel episodes multi',
+        trailing: _value(
+          sl<PlaybackPrefs>().batchDownloadStyle == 'minimal'
+              ? 'Minimal'
+              : 'Classic',
+        ),
+        onTap: _pickBatchDownloadStyle,
       ),
       if (Platform.isAndroid)
         _SettingsEntry(

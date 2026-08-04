@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -714,6 +715,11 @@ class _DetailViewState extends State<_DetailView>
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           builder: (_) => _DownloadSheet(
+            // Phone-only Minimal wheel (Settings → Interface). TV stays on the
+            // well-tested Classic grid regardless of the pref.
+            minimal:
+                !sl<AppMode>().isTv &&
+                sl<PlaybackPrefs>().batchDownloadStyle == 'minimal',
             title: detail.title,
             episodesBySeason: episodesBySeason,
             initialSeason: initialSeason,
@@ -3169,8 +3175,13 @@ class _DownloadSheet extends StatefulWidget {
     required this.initialCategory,
     required this.availableCategories,
     required this.resolveEpisodes,
+    this.minimal = false,
   });
 
+  /// Minimal presentation: a number-wheel "how many episodes" picker instead
+  /// of the per-episode thumbnail grid. Same state, same result — only the
+  /// selection UI + chrome differ (see [_buildMinimal]).
+  final bool minimal;
   final String title;
   final Map<int, List<Episode>> episodesBySeason;
   final int initialSeason;
@@ -3209,10 +3220,19 @@ class _DownloadSheetState extends State<_DownloadSheet> {
   final _searchFocus = FocusNode();
   String _query = '';
 
+  // ── Minimal (wheel) mode only ──────────────────────────────────────────
+  // The wheel picks a contiguous block: [_count] episodes starting at
+  // [_startIdx] in the season (both indexing [_minimalPool], sorted by number).
+  // The "From E{n}" control moves the start; the wheel picks how many.
+  int _count = 0;
+  int _startIdx = 0;
+  late final FixedExtentScrollController _wheelCtrl;
+
   @override
   void dispose() {
     _searchCtrl.dispose();
     _searchFocus.dispose();
+    _wheelCtrl.dispose();
     super.dispose();
   }
 
@@ -3232,7 +3252,53 @@ class _DownloadSheetState extends State<_DownloadSheet> {
     _selectedIds.addAll(
       (_episodesBySeason[_season] ?? const <Episode>[]).map((e) => e.id),
     );
+    // Minimal wheel starts on the whole season (matches the classic default).
+    _count = _seasonEps.length;
+    _wheelCtrl = FixedExtentScrollController(
+      initialItem: (_count - 1).clamp(0, 1 << 30),
+    );
     _resolveSources();
+  }
+
+  /// The current season's episodes, sorted by number — the wheel indexes into
+  /// this so "From E{n}" and the count line up with ascending episode numbers.
+  List<Episode> get _minimalPool =>
+      (_episodesBySeason[_season] ?? const <Episode>[]).toList()
+        ..sort((a, b) => (a.number ?? 0).compareTo(b.number ?? 0));
+
+  int get _maxCount => (_minimalPool.length - _startIdx).clamp(0, 1 << 30);
+
+  /// The episode number at pool index [idx] — used for the "From E{n}" label
+  /// and the wheel, so the wheel reads as real episode numbers (E8, E9 …)
+  /// starting at the chosen start, not an abstract 1-based count.
+  int _epNumAt(int idx) {
+    final pool = _minimalPool;
+    if (pool.isEmpty) return 1;
+    final j = idx.clamp(0, pool.length - 1);
+    return pool[j].number?.toInt() ?? (j + 1);
+  }
+
+  int get _startNum => _epNumAt(_startIdx);
+
+  /// Re-align the wheel to [_count] after the pool/start changed underneath it
+  /// (season / sub-dub / start). No-op in classic mode (wheel not built).
+  void _syncWheel() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_wheelCtrl.hasClients) return;
+      final maxIdx = (_maxCount - 1).clamp(0, 1 << 30);
+      final target = (_count - 1).clamp(0, maxIdx);
+      if (_wheelCtrl.selectedItem != target) _wheelCtrl.jumpToItem(target);
+    });
+  }
+
+  /// The episodes the wheel currently picks: [_count] episodes from [_startIdx]
+  /// — the exact same shape (sorted by number) the classic grid returns.
+  List<Episode> get _minimalEpisodes {
+    final pool = _minimalPool;
+    if (pool.isEmpty) return const [];
+    final start = _startIdx.clamp(0, pool.length - 1);
+    final n = _count.clamp(1, pool.length - start);
+    return pool.sublist(start, start + n);
   }
 
   /// Switch sub/dub: re-resolve the episode list for [cat] (dub episodes have
@@ -3262,8 +3328,11 @@ class _DownloadSheetState extends State<_DownloadSheet> {
         _selectedIds
           ..clear()
           ..addAll((byS[season] ?? const <Episode>[]).map((e) => e.id));
+        _startIdx = 0;
+        _count = (byS[season] ?? const <Episode>[]).length;
       });
       await _resolveSources();
+      _syncWheel();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -3347,6 +3416,7 @@ class _DownloadSheetState extends State<_DownloadSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.minimal) return _buildMinimal(context);
     final count = _selectedIds.length;
     return SafeArea(
       top: false,
@@ -3525,6 +3595,471 @@ class _DownloadSheetState extends State<_DownloadSheet> {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Minimal (number-wheel) presentation. Shares every bit of the classic
+  // state above — sub/dub, season, source/quality, search — and returns the
+  // identical (quality, category, episodes) result. Only the selection widget
+  // (a wheel picking "how many from the top") and the chrome differ.
+  // ════════════════════════════════════════════════════════════════════
+
+  String get _qualityLabel {
+    if (_loadingSources) return '…';
+    final srcs = _sources ?? const <VideoSource>[];
+    if (srcs.isEmpty) return 'Auto';
+    return (_quality.isEmpty || _quality == 'best') ? 'Best' : _quality;
+  }
+
+  String _rangeLabel(List<Episode> eps) {
+    int numOf(Episode e, int fallback) => e.number?.toInt() ?? fallback;
+    final first = numOf(eps.first, 1);
+    final last = numOf(eps.last, eps.length);
+    return eps.length == 1 ? 'E$first' : 'E$first – E$last';
+  }
+
+  void _toggleCategory() {
+    if (widget.availableCategories.length < 2) return;
+    final other = widget.availableCategories.firstWhere(
+      (c) => c != _category,
+      orElse: () => _category,
+    );
+    _setCategory(other); // resets _count + re-syncs the wheel
+  }
+
+  Future<void> _pickSeason() async {
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _SeasonSheet(seasons: _seasons, currentSeason: _season),
+    );
+    if (picked == null || picked == _season || !mounted) return;
+    setState(() {
+      _season = picked;
+      _startIdx = 0;
+      _count = _seasonEps.length; // _season already updated above
+    });
+    await _resolveSources();
+    _syncWheel();
+  }
+
+  /// "From E{n}" — a searchable episode list that sets where the block starts.
+  /// Picking a start defaults the count to "rest of the season from here".
+  Future<void> _pickStart() async {
+    final pool = _minimalPool;
+    if (pool.isEmpty) return;
+    var q = '';
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final matches = filterEpisodes(pool, q);
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.textTertiary.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Start from', style: AppText.headline),
+                    ),
+                  ),
+                  if (pool.length > 8)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                      child: TextField(
+                        onChanged: (v) => setSheet(() => q = v),
+                        style: AppText.body.copyWith(
+                          color: AppColors.textPrimary,
+                        ),
+                        cursorColor: AppColors.accent,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: 'Jump to episode',
+                          hintStyle: AppText.body.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
+                            color: AppColors.textTertiary,
+                            size: 20,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.surface2,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  const Divider(color: AppColors.hairline, height: 1),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: matches.length,
+                      itemBuilder: (c, i) {
+                        final ep = matches[i];
+                        final idx = pool.indexOf(ep);
+                        final n = ep.number?.toInt() ?? (idx + 1);
+                        final title = ep.title.trim();
+                        final hasTitle =
+                            title.isNotEmpty && title != 'Episode $n';
+                        return ListTile(
+                          title: Text(
+                            hasTitle ? 'E$n  ·  $title' : 'E$n',
+                            style: AppText.body,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: idx == _startIdx
+                              ? Icon(Icons.check_rounded, color: AppColors.accent)
+                              : null,
+                          onTap: () => Navigator.pop(ctx, idx),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _startIdx = picked.clamp(0, pool.length - 1);
+      _count = pool.length - _startIdx; // default: rest of the season from here
+    });
+    _syncWheel();
+  }
+
+  Future<void> _pickQuality() async {
+    final srcs = _sources ?? const <VideoSource>[];
+    if (srcs.isEmpty) return;
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textTertiary.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Source', style: AppText.headline),
+              ),
+            ),
+            const Divider(color: AppColors.hairline, height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: [
+                  for (var i = 0; i < srcs.length; i++)
+                    ListTile(
+                      title: Text(
+                        _sourceName(srcs[i], i),
+                        style: AppText.body,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: i == _selectedSourceIdx
+                          ? Icon(Icons.check_rounded, color: AppColors.accent)
+                          : ((srcs[i].quality?.trim().isNotEmpty ?? false)
+                                ? Text(
+                                    srcs[i].quality!.trim(),
+                                    style: AppText.caption,
+                                  )
+                                : null),
+                      onTap: () => Navigator.pop(ctx, i),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedSourceIdx = picked;
+      final q = srcs[picked].quality;
+      _quality = (q != null && q.trim().isNotEmpty) ? q.trim() : 'best';
+    });
+  }
+
+  Widget _minimalMetaSeg(String label, {VoidCallback? onTap}) {
+    final txt = Text(
+      label,
+      style: AppText.body.copyWith(
+        color: onTap == null ? AppColors.textTertiary : AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+        decoration: TextDecoration.underline,
+        decorationColor: AppColors.textTertiary,
+        decorationStyle: TextDecorationStyle.dotted,
+      ),
+    );
+    if (onTap == null) return txt;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: txt,
+    );
+  }
+
+  Widget _minimalMetaLine() {
+    final segs = <Widget>[];
+    void add(Widget w) {
+      if (segs.isNotEmpty) {
+        segs.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '·',
+              style: AppText.body.copyWith(color: AppColors.textTertiary),
+            ),
+          ),
+        );
+      }
+      segs.add(w);
+    }
+
+    if (widget.availableCategories.length > 1) {
+      add(
+        _minimalMetaSeg(
+          _category == 'dub' ? 'Dub' : 'Sub',
+          onTap: _toggleCategory,
+        ),
+      );
+    }
+    if (_multiSeason) {
+      add(_minimalMetaSeg('Season $_season', onTap: _pickSeason));
+    }
+    // "From E{n}" — the movable start point (searchable picker).
+    if (_minimalPool.length > 1) {
+      add(_minimalMetaSeg('From E$_startNum', onTap: _pickStart));
+    }
+    final srcs = _sources ?? const <VideoSource>[];
+    add(
+      _minimalMetaSeg(
+        _qualityLabel,
+        onTap: (_loadingSources || srcs.isEmpty) ? null : _pickQuality,
+      ),
+    );
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: segs,
+    );
+  }
+
+  Widget _wheelPicker() {
+    final maxCount = _maxCount.clamp(1, 1 << 30);
+    return SizedBox(
+      height: 196,
+      child: ShaderMask(
+        // Fade the neighbours toward the sheet background so the centre number
+        // reads as selected — the dimmed-neighbour look of the reference.
+        shaderCallback: (rect) => const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.white,
+            Colors.white,
+            Colors.transparent,
+          ],
+          stops: [0.0, 0.32, 0.68, 1.0],
+        ).createShader(rect),
+        blendMode: BlendMode.dstIn,
+        child: CupertinoPicker(
+          scrollController: _wheelCtrl,
+          itemExtent: 62,
+          squeeze: 1.15,
+          useMagnifier: false,
+          backgroundColor: Colors.transparent,
+          selectionOverlay: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: AppColors.hairline, width: 1),
+                bottom: BorderSide(color: AppColors.hairline, width: 1),
+              ),
+            ),
+          ),
+          onSelectedItemChanged: (i) {
+            HapticFeedback.selectionClick();
+            setState(() => _count = i + 1);
+          },
+          children: [
+            // Show the END episode number (E{start}…E{last}), so picking the
+            // start at E8 makes the wheel read 8, 9, 10 … not 1, 2, 3.
+            for (var i = 1; i <= maxCount; i++)
+              Center(
+                child: Text(
+                  '${_epNumAt(_startIdx + i - 1)}',
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _minimalTextBtn(String label, {VoidCallback? onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Text(
+          label,
+          style: AppText.button.copyWith(
+            color: onTap == null ? AppColors.textTertiary : AppColors.accent,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMinimal(BuildContext context) {
+    final pool = _minimalPool;
+    final eps = _minimalEpisodes;
+    final count = eps.length;
+    final preview = eps.isEmpty
+        ? ''
+        : '$count episode${count == 1 ? '' : 's'} · ${_rangeLabel(eps)}';
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Download episodes',
+              style: AppText.title.copyWith(color: AppColors.accent),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.title,
+              style: AppText.caption,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 16),
+            _minimalMetaLine(),
+            const SizedBox(height: 6),
+            if (pool.isEmpty)
+              SizedBox(
+                height: 196,
+                child: Center(
+                  child: Text(
+                    'No episodes',
+                    style: AppText.body.copyWith(color: AppColors.textTertiary),
+                  ),
+                ),
+              )
+            else
+              _wheelPicker(),
+            const SizedBox(height: 2),
+            Center(
+              child: Text(
+                preview,
+                style: AppText.caption.copyWith(color: AppColors.textTertiary),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _minimalTextBtn(
+                  'Cancel',
+                  onTap: () => Navigator.pop(context),
+                ),
+                const SizedBox(width: 26),
+                _minimalTextBtn(
+                  'Download',
+                  onTap: count == 0
+                      ? null
+                      : () => Navigator.pop(context, (
+                          quality: _quality,
+                          category: _category,
+                          episodes: _minimalEpisodes,
+                        )),
+                ),
+              ],
+            ),
           ],
         ),
       ),

@@ -157,6 +157,17 @@ class PlaybackPrefs {
   Future<void> setAutoUpdateExtensions(bool value) =>
       _box.put('autoUpdateExtensions', value);
 
+  /// Style of the batch-download sheet (detail → Download on a multi-episode
+  /// title):
+  ///  • 'classic' = the full sheet with a per-episode thumbnail grid. DEFAULT.
+  ///  • 'minimal' = a number-wheel "how many episodes" picker with the
+  ///    sub/dub · season · quality controls tucked into one line.
+  /// Both return the exact same selection, so the download itself is identical.
+  String get batchDownloadStyle =>
+      _box.get('batchDownloadStyle', defaultValue: 'classic') as String;
+  Future<void> setBatchDownloadStyle(String value) =>
+      _box.put('batchDownloadStyle', value);
+
   /// Epoch millis of the last background extension-update pass (throttle gate).
   int get lastExtensionUpdateMs =>
       (_box.get('lastExtensionUpdateMs', defaultValue: 0) as num).toInt();
