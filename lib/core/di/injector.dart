@@ -42,6 +42,7 @@ import '../metadata/metadata_enrichment.dart';
 import '../metadata/people_service.dart';
 import '../metadata/tmdb.dart';
 import '../metadata/title_logo_service.dart';
+import '../mode/content_mode_cubit.dart';
 import '../trailer/trailer_service.dart';
 import '../anilist/anilist_service.dart';
 import '../anilist/anilist_store.dart';
@@ -470,6 +471,14 @@ Future<void> initDependencies() async {
         ...csManager.all.map((p) => p.sourceId),
       },
     ),
+  );
+
+  // App-wide content mode (anime/manga/novel), persisted, with a separate
+  // remembered active source per mode so switching modes never disturbs the
+  // anime source pick. Registered right after ActiveSourceCubit since it
+  // wraps it.
+  sl.registerSingleton<ContentModeCubit>(
+    await ContentModeCubit.create(sl<ActiveSourceCubit>()),
   );
 
   sl.registerSingleton<SourceRepository>(
