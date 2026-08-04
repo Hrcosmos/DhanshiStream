@@ -15,12 +15,14 @@ import '../models/episode.dart';
 import '../models/home_section.dart';
 import '../models/media_detail.dart';
 import '../models/media_item.dart';
+import '../models/page_content.dart';
 import '../models/provider_info.dart';
 import '../models/video_source.dart';
 import 'base_provider.dart';
 import 'cf_clearance_store.dart';
 import 'crypto_ops.dart';
 import 'js_bootstrap.dart';
+import 'reading_provider.dart';
 
 enum ProviderHealthStatus { healthy, degraded, broken }
 
@@ -501,8 +503,10 @@ class _JsHost {
 }
 
 /// Thin per-source wrapper. Calls route through the shared _JsHost and
-/// deserialize into the video models.
-class JsProvider implements BaseProvider {
+/// deserialize into the video models. Also implements [ReadingProvider]:
+/// manga/novel JS sources export `getPages`/`getText` the same way video
+/// sources export `getVideoSources` — there's no separate provider type.
+class JsProvider implements BaseProvider, ReadingProvider {
   JsProvider._({
     required this.sourceId,
     required this.originRepoUrl,
@@ -666,6 +670,23 @@ class JsProvider implements BaseProvider {
     ], timeout: const Duration(seconds: 60));
     final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
     return list.map(VideoSource.fromJson).toList();
+  }
+
+  @override
+  Future<List<PageImage>> getPages(String chapterUrl) async {
+    final raw = await _call('getPages', [chapterUrl]);
+    return PageImage.listFromJson(await _decodeBig(raw));
+  }
+
+  @override
+  Future<ChapterText> getText(String chapterUrl) async {
+    // Chapter text/HTML can run long for novels, so route big payloads
+    // through _decodeBig like the other listing calls rather than always
+    // decoding inline on the UI thread.
+    final raw = await _call('getText', [chapterUrl]);
+    final decoded = await _decodeBig(raw);
+    if (decoded is Map) return ChapterText.fromJson(decoded);
+    return ChapterText(html: decoded?.toString() ?? '');
   }
 
   /// Returns the provider's raw settings schema (the JSON list returned
