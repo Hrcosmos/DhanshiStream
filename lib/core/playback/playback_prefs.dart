@@ -130,6 +130,14 @@ class PlaybackPrefs {
   bool get autoResume => _box.get('autoResume', defaultValue: true) as bool;
   Future<void> setAutoResume(bool value) => _box.put('autoResume', value);
 
+  /// Auto-add a title to My List (as "Watching") the first time you start
+  /// watching it — mirrors the tracker auto-scrobble. Off by default so My List
+  /// stays a manually-curated list; trackers scrobble regardless of this.
+  bool get autoAddToMyList =>
+      _box.get('autoAddToMyList', defaultValue: false) as bool;
+  Future<void> setAutoAddToMyList(bool value) =>
+      _box.put('autoAddToMyList', value);
+
   /// How closing the player is guarded against accidental exits:
   ///  • 'double_back' = first back shows a "press back again" hint, second back
   ///    within 2s exits. DEFAULT.

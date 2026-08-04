@@ -1809,6 +1809,16 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
                   if (mounted) setState(() {});
                 },
               ),
+              _toggleRow(
+                icon: Icons.playlist_add_check_rounded,
+                title: 'Auto-add to My List',
+                subtitle: 'Add a title to My List when you start watching it',
+                value: _prefs.autoAddToMyList,
+                onChanged: (v) async {
+                  await _prefs.setAutoAddToMyList(v);
+                  if (mounted) setState(() {});
+                },
+              ),
               SettingsTile(
                 icon: Icons.exit_to_app_outlined,
                 title: 'Close confirmation',

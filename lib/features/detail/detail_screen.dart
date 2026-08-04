@@ -34,6 +34,7 @@ import '../../core/models/provider_info.dart';
 import '../../core/models/watch_status.dart';
 import '../../core/playback/filler_service.dart';
 import '../../core/playback/list_status_store.dart';
+import '../../core/privacy/incognito_mode.dart';
 import '../../core/playback/my_list.dart';
 import '../../core/ui/list_status_sheet.dart';
 import '../../core/ui/tracker_sync_sheet.dart';
@@ -529,6 +530,16 @@ class _DetailViewState extends State<_DetailView>
     MediaDetail detail,
     String category,
   ) async {
+    // Auto-add this title to My List (as Watching) on play, if the user opted
+    // in — mirrors the tracker auto-scrobble. Skipped in incognito and when it's
+    // already listed; fire-and-forget so it never delays playback.
+    if (sl<PlaybackPrefs>().autoAddToMyList &&
+        !IncognitoMode.on &&
+        !_myList.contains(widget.item)) {
+      _myList.add(widget.item);
+      _listStatus.setStatus(widget.item, WatchStatus.watching);
+    }
+
     // Available sub/dub categories from the detail — lets the PLAYER offer the
     // Sub/Dub switch (the Detail no longer does). Empty/single → treated as a
     // single-category source by the player (no Version section).
