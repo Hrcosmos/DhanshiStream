@@ -147,5 +147,30 @@ void main() {
       final filtered = filterBucketsForMode(raw, ContentMode.manga);
       expect(filtered.anime.any((r) => r.id == 'ani:42'), isFalse);
     });
+
+    test(
+      'anime mode never drops or reorders rows that share a sourceId '
+      '(the same source installed from two different repos)',
+      () {
+        // A map-by-id round trip would collapse these into one row — a real
+        // regression, since ProviderRegistry keys entries by repoUrl+sourceId
+        // and explicitly supports the same sourceId installed twice.
+        final buckets = (
+          anime: <({String id, String label, String? repo})>[
+            (id: 'js:dup', label: 'Dup', repo: 'repoA'),
+            (id: 'js:dup', label: 'Dup', repo: 'repoB'),
+            (id: 'js:solo', label: 'Solo', repo: null),
+          ],
+          movies: const <({String id, String label, String? repo})>[],
+          nsfw: const <({String id, String label, String? repo})>[],
+        );
+        final filtered = filterBucketsForMode(buckets, ContentMode.anime);
+        expect(filtered.anime, buckets.anime); // byte-identical: all 3 survive, in order
+        expect(
+          filtered.anime.map((r) => r.repo).toList(),
+          ['repoA', 'repoB', null], // each duplicate keeps its own repo tag
+        );
+      },
+    );
   });
 }

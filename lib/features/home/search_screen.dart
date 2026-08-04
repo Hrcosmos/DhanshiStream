@@ -116,12 +116,19 @@ class _SearchViewState extends State<_SearchView> {
 
   /// [_repo.loadedSources] narrowed to the active content mode — a no-op in
   /// anime mode (anime+movie sources both pass), so search shows exactly the
-  /// same sources it does today there.
-  List<({String id, String name})> get _modeSources => filterSourcesForMode(
-    {for (final s in _repo.loadedSources) s.id: s},
-    sl<ContentModeCubit>().state,
-    (s) => sourceTypeOf(s.id),
-  ).values.toList();
+  /// same sources it does today there. Anime is short-circuited to skip the
+  /// filter entirely (no per-source ProviderRegistry lookup), since this is a
+  /// hot path — called from inside BlocBuilders that rebuild on every search
+  /// state emission.
+  List<({String id, String name})> get _modeSources {
+    final mode = sl<ContentModeCubit>().state;
+    if (mode == ContentMode.anime) return _repo.loadedSources;
+    return filterSourcesForMode(
+      {for (final s in _repo.loadedSources) s.id: s},
+      mode,
+      (s) => sourceTypeOf(s.id),
+    ).values.toList();
+  }
 
   @override
   void initState() {
@@ -394,6 +401,9 @@ class _SearchViewState extends State<_SearchView> {
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final cellW = (mq.size.width - 40 - 24) / 3;
+    // Computed once per outer build, not once per BlocBuilder rebuild below
+    // (each fires on every search state emission during a live fan-out).
+    final modeSources = _modeSources;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -425,7 +435,7 @@ class _SearchViewState extends State<_SearchView> {
                     state.status != SearchStatus.success &&
                     state.suggestions.isNotEmpty;
                 final tabs = ecosystemTabsFor(
-                  _modeSources.map((s) => s.id),
+                  modeSources.map((s) => s.id),
                 );
                 if (state.currentSourceOnly ||
                     showingSuggestions ||
@@ -494,7 +504,7 @@ class _SearchViewState extends State<_SearchView> {
                         message: 'Search failed — try again',
                       );
                     case SearchStatus.success:
-                      return _resultsBody(state, cellW);
+                      return _resultsBody(state, cellW, modeSources);
                   }
                 },
               ),
@@ -929,7 +939,11 @@ class _SearchViewState extends State<_SearchView> {
   }
 
   // ── Results body (grouped per source, layout-aware) ─────────────────────────
-  Widget _resultsBody(SearchState state, double cellW) {
+  Widget _resultsBody(
+    SearchState state,
+    double cellW,
+    List<({String id, String name})> modeSources,
+  ) {
     final groups = state.sortedVisibleGroups;
 
     // Sources still loading: those switched on for search that haven't returned
@@ -945,7 +959,7 @@ class _SearchViewState extends State<_SearchView> {
     final pending =
         (state.currentSourceOnly || state.sourceFilter != kAllSources)
         ? const <({String id, String name})>[]
-        : _modeSources
+        : modeSources
               .where(
                 (s) =>
                     prefs.isIncluded(s.id) &&

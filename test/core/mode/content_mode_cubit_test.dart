@@ -47,6 +47,13 @@ void main() {
     expect(reloaded.state, ContentMode.manga);
   });
 
+  // Also pins the C.3 ordering trap: the outgoing source must be captured
+  // BEFORE the incoming mode's source is restored, or a switch parks the
+  // newly-restored source under the outgoing mode's key instead of what was
+  // really active there. A plain anime->manga->anime check wouldn't surface
+  // this on its own (the corruption lands in the mode you just left, not the
+  // one you land on) — the giveaway only shows up on the *next* switch back,
+  // which is why this test goes one hop further than a bare round trip.
   test('remembers a separate active source per mode', () async {
     await ActiveSourceCubit.init();
     final active = ActiveSourceCubit(box: Hive.box(ActiveSourceCubit.boxName));
@@ -100,33 +107,4 @@ void main() {
     await cubit.setMode(ContentMode.manga);
     expect(active.state, 'js:mangasrc');
   });
-
-  // ── C.3: ordering trap — the outgoing source must be captured BEFORE the
-  // incoming mode's source is restored, or a switch parks the newly-restored
-  // source under the outgoing mode's key instead of what was really active
-  // there. A plain anime->manga->anime check doesn't surface this on its own
-  // (the corruption lands in the mode you just left, not the one you land
-  // on) — the giveaway only shows up on the *next* switch back, so this test
-  // goes one hop further to actually catch a reordering regression.
-  test(
-    'switching anime -> manga -> anime restores the exact anime source, '
-    'and a further -> manga hop proves the manga source was not clobbered',
-    () async {
-      await ActiveSourceCubit.init();
-      final active =
-          ActiveSourceCubit(box: Hive.box(ActiveSourceCubit.boxName));
-      final cubit = await ContentModeCubit.create(active);
-
-      active.setSource('js:animesrc');
-      final originalAnimeSource = active.state;
-
-      await cubit.setMode(ContentMode.manga);
-      active.setSource('js:mangasrc');
-      await cubit.setMode(ContentMode.anime);
-      expect(active.state, originalAnimeSource); // anime source restored
-
-      await cubit.setMode(ContentMode.manga);
-      expect(active.state, 'js:mangasrc'); // manga source wasn't clobbered
-    },
-  );
 }

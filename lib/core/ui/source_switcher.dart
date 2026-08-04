@@ -138,13 +138,14 @@ ProviderType sourceTypeOf(String id) {
 /// mode for today's real source sets (anime/movie are the only types in use),
 /// so the picker and search show exactly what they show today.
 SourceBuckets filterBucketsForMode(SourceBuckets buckets, ContentMode mode) {
+  // A plain list filter, NOT a map-by-id round trip: the same sourceId can
+  // legitimately appear twice in a bucket (installed from two different
+  // repos — see ProviderRegistry's composite repoUrl+sourceId key), and a
+  // map would collapse those into one row, silently dropping one from the
+  // picker/search.
   List<({String id, String label, String? repo})> filter(
     List<({String id, String label, String? repo})> rows,
-  ) => filterSourcesForMode(
-    {for (final r in rows) r.id: r},
-    mode,
-    (r) => sourceTypeOf(r.id),
-  ).values.toList();
+  ) => rows.where((r) => mode.matchesProvider(sourceTypeOf(r.id))).toList();
 
   return (
     anime: filter(buckets.anime),

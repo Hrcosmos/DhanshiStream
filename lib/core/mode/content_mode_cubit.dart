@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive/hive.dart';
 
@@ -70,7 +71,15 @@ class ContentModeCubit extends Cubit<ContentMode> {
     // error so a failure can't surface as an unhandled zone error — the mode
     // switcher calls setMode without awaiting it — and can't block the other
     // key's write either.
-    unawaited(_box.put('src.${outgoingMode.name}', outgoingSource).catchError((_) {}));
-    unawaited(_box.put('mode', m.name).catchError((_) {}));
+    unawaited(
+      _box.put('src.${outgoingMode.name}', outgoingSource).catchError(
+        (e) => debugPrint('[ContentModeCubit] failed to park $outgoingSource: $e'),
+      ),
+    );
+    unawaited(
+      _box.put('mode', m.name).catchError(
+        (e) => debugPrint('[ContentModeCubit] failed to persist mode ${m.name}: $e'),
+      ),
+    );
   }
 }
