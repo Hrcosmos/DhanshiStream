@@ -611,9 +611,10 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                     Text('${_pageIndex + 1}', style: AppText.caption),
                     Expanded(
                       child: Slider(
-                        value: _pageIndex
-                            .toDouble()
-                            .clamp(0, (pageCount - 1).toDouble()),
+                        value: _pageIndex.toDouble().clamp(
+                          0,
+                          (pageCount - 1).toDouble(),
+                        ),
                         min: 0,
                         max: (pageCount - 1).toDouble(),
                         divisions: pageCount - 1,

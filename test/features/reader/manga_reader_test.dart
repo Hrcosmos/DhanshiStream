@@ -96,9 +96,12 @@ void _pureLogicTests() {
       expect(estimateIndexFromScroll(500, 1000, 5), 2);
     });
 
-    test('a chapter that fits on screen (no scroll extent) is the last page', () {
-      expect(estimateIndexFromScroll(0, 0, 5), 4);
-    });
+    test(
+      'a chapter that fits on screen (no scroll extent) is the last page',
+      () {
+        expect(estimateIndexFromScroll(0, 0, 5), 4);
+      },
+    );
 
     test('empty chapter is page 0', () {
       expect(estimateIndexFromScroll(0, 1000, 0), 0);
@@ -296,7 +299,9 @@ void main() {
       sl.registerSingleton<ReaderPrefs>(ReaderPrefs());
 
       ani = AniyomiManager();
-      ani.register(_FakeReadingProvider('ani:m', {'u1': pages(3), 'u2': pages(2)}));
+      ani.register(
+        _FakeReadingProvider('ani:m', {'u1': pages(3), 'u2': pages(2)}),
+      );
       sl.registerSingleton<SourceRepository>(
         SourceRepository(
           manager: ProviderManager(dio: Dio()),
@@ -451,9 +456,7 @@ void main() {
       },
     );
 
-    testWidgets('reopening a chapter restores its saved page', (
-      tester,
-    ) async {
+    testWidgets('reopening a chapter restores its saved page', (tester) async {
       await tester.runAsync(() => sl<ReaderPrefs>().setDirection('ltr'));
       // Pre-seed a saved position: page index 2 of a 3-page chapter.
       await tester.runAsync(
