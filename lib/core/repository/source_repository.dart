@@ -4,12 +4,14 @@ import '../models/episode.dart';
 import '../models/home_section.dart';
 import '../models/media_detail.dart';
 import '../models/media_item.dart';
+import '../models/page_content.dart';
 import '../models/video_source.dart';
 import '../playback/playback_prefs.dart';
 import '../playback/source_health_store.dart';
 import '../provider/base_provider.dart';
 import '../provider/cloudstream_provider.dart';
 import '../provider/provider_manager.dart';
+import '../provider/reading_provider.dart';
 import '../state/active_source_cubit.dart';
 
 /// Facade over the active provider runtime for the UI layer.
@@ -439,6 +441,31 @@ class SourceRepository {
       return fresh;
     }
     return _providerFor(sourceId).getVideoSources(episodeUrl, fast: fast);
+  }
+
+  /// Manga leaf — ordered page images for [chapterUrl]. No expiry cache here:
+  /// unlike stream links, page image URLs don't rot within a session, so this
+  /// never touches [_prefetch]/[_resolved]. Throws [UnsupportedError] if the
+  /// resolved source isn't a [ReadingProvider] (e.g. CloudStream/Aniyomi) —
+  /// unreachable through mode-filtered UI, but a hard guard regardless.
+  Future<List<PageImage>> pages(String chapterUrl, {String? sourceId}) {
+    final p = _providerFor(sourceId);
+    if (p is! ReadingProvider) {
+      throw UnsupportedError('${p.sourceId} does not support reading content');
+    }
+    // ReadingProvider is deliberately unrelated to BaseProvider (Task 3), so
+    // the `is!` check above doesn't statically promote — cast explicitly.
+    return (p as ReadingProvider).getPages(chapterUrl);
+  }
+
+  /// Novel leaf — chapter text for [chapterUrl]. Same no-cache rationale and
+  /// [ReadingProvider] guard as [pages].
+  Future<ChapterText> chapterText(String chapterUrl, {String? sourceId}) {
+    final p = _providerFor(sourceId);
+    if (p is! ReadingProvider) {
+      throw UnsupportedError('${p.sourceId} does not support reading content');
+    }
+    return (p as ReadingProvider).getText(chapterUrl);
   }
 
   /// Drop the cached fast-resolution for an episode so the next [sources] call
