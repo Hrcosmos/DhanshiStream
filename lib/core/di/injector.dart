@@ -24,6 +24,7 @@ import '../search/title_suggestion_service.dart';
 import '../ui/animation_prefs.dart';
 import '../playback/skip_service.dart';
 import '../playback/resume_store.dart';
+import '../reading/read_history.dart';
 import '../reading/read_store.dart';
 import '../playback/title_prefs.dart';
 import '../playback/watch_history.dart';
@@ -162,6 +163,10 @@ Future<void> initDependencies() async {
   await WatchHistory.init();
   sl.registerSingleton<WatchHistory>(
     WatchHistory(sl<SupabaseService>(), currentUserId),
+  );
+  await ReadHistory.init();
+  sl.registerSingleton<ReadHistory>(
+    ReadHistory(sl<SupabaseService>(), currentUserId),
   );
   sl.registerSingleton<WatchRoomService>(WatchRoomService(sl<SupabaseService>()));
   sl.registerSingleton<WatchTogetherController>(
