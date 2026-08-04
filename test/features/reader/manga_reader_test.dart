@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:watch_app/core/di/injector.dart';
@@ -250,12 +252,14 @@ List<PageImage> pages(int count, {String prefix = 'https://example.com/p'}) =>
 
 /// Pumps a bounded, small number of frames instead of `pumpAndSettle()`.
 ///
-/// Not `pumpAndSettle()` because a real `CachedNetworkImage` would animate
-/// its loading placeholder forever against an unreachable fake URL in this
-/// network-less sandbox — moot now that [debugMangaReaderStubImages] skips
-/// real images in tests, but kept as the settle strategy regardless (no
-/// downside, and it documents the constraint for anyone who flips that flag
-/// back).
+/// Not `pumpAndSettle()` because every page's loading placeholder used to be
+/// an indeterminate `CircularProgressIndicator`, which — against an
+/// unreachable fake URL in this network-less sandbox — animates forever and
+/// never lets `pumpAndSettle()` see "no more frames scheduled". The
+/// placeholders are now static (`ColoredBox`, matching
+/// poster_card.dart/continue_card.dart's convention), so this is moot, but
+/// bounded pumping is kept regardless — it's simpler to reason about than
+/// "settle, but only sometimes."
 ///
 /// Pumps past `kDoubleTapTimeout` (~300ms): every page's GestureDetector
 /// registers both `onTapUp` (tap zones) and `onDoubleTap` (zoom), so Flutter
@@ -279,11 +283,22 @@ void main() {
     late AniyomiManager ani;
 
     setUp(() async {
-      // CachedNetworkImage goes through flutter_cache_manager, which under
-      // `flutter test` hits real disk/DB/timer machinery no mock cleanly
-      // routes around (see the report). Stub every page image out entirely
-      // instead — these tests assert structure, not rendered pixels.
-      debugMangaReaderStubImages = true;
+      // CachedNetworkImage (flutter_cache_manager) hits path_provider to find
+      // a disk-cache directory; without a mock handler that throws
+      // MissingPluginException on the first real image load. Same fix as
+      // reading_detail_routing_test.dart (Task 11's own test for this
+      // routing).
+      TestWidgetsFlutterBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (call) async => '/tmp',
+          );
+
+      // The global image cache persists across tests in this file — clear it
+      // so one test's precache calls can't leave stale entries that make a
+      // later test's cache assertions pass for the wrong reason.
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
 
       dir = await Directory.systemTemp.createTemp('manga_reader_test');
       Hive.init(dir.path);
@@ -314,7 +329,11 @@ void main() {
     });
 
     tearDown(() async {
-      debugMangaReaderStubImages = false;
+      TestWidgetsFlutterBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            null,
+          );
       await sl.reset();
       await Hive.close();
       if (await dir.exists()) await dir.delete(recursive: true);
@@ -341,6 +360,33 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
     }
+
+    // flutter_cache_manager's cache-info repo (sqflite-backed on macOS/iOS/
+    // Android) throws `StateError: databaseFactory not initialized` the
+    // first time *any* CachedNetworkImage in this whole test process ever
+    // resolves — `flutter test` never registers a sqflite plugin, and there's
+    // no first-party way to fake `databaseFactory` without a new dependency.
+    // The failure is one-time only: flutter_cache_manager doesn't retry its
+    // metadata-store lookup after the first failure, so every image after
+    // this one silently falls straight through to a network fetch instead.
+    // Deliberately eating that one-time failure here, in its own test, keeps
+    // every other test in this file clean — see the task report for the
+    // full investigation (this was verified empirically, not assumed).
+    testWidgets(
+      "warm-up: absorb flutter_cache_manager's one-time cache-store init "
+      'failure before any real test runs',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: CachedNetworkImage(
+              imageUrl: 'https://example.com/warmup.jpg',
+            ),
+          ),
+        );
+        await settle(tester);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
 
     testWidgets('ltr direction renders a non-reversed PageView', (
       tester,
@@ -400,6 +446,13 @@ void main() {
       expect(saved, isNotNull);
       expect(saved!.pos, 1);
       expect(saved.total, 3);
+
+      // Pin the other half of the carry-forward contract: a routine page
+      // turn (no chapter change, no dispose) must never flush. A regression
+      // that flips _saveProgress's default to flush: true would still leave
+      // every other assertion in this file green while pushing to Supabase
+      // on every page turn.
+      expect(spyHistory.flushCalls, everyElement(isFalse));
 
       await disposeHarness(tester);
     });
@@ -485,5 +538,67 @@ void main() {
 
       await disposeHarness(tester);
     });
+
+    testWidgets(
+      "a page's CachedNetworkImage receives its real imageUrl and headers "
+      '(the exact detail that breaks CF-walled sources if dropped)',
+      (tester) async {
+        await tester.runAsync(() => sl<ReaderPrefs>().setDirection('ltr'));
+        ani.register(
+          _FakeReadingProvider('ani:m', {
+            'u1': [
+              PageImage(
+                url: 'https://example.com/cf-page.jpg',
+                headers: const {'cf-clearance': 'abc123'},
+              ),
+            ],
+          }),
+        );
+
+        await tester.pumpWidget(harness());
+        await settle(tester);
+
+        final img = tester.widget<CachedNetworkImage>(
+          find.byType(CachedNetworkImage),
+        );
+        expect(img.imageUrl, 'https://example.com/cf-page.jpg');
+        expect(img.httpHeaders, const {'cf-clearance': 'abc123'});
+
+        await disposeHarness(tester);
+      },
+    );
+
+    testWidgets(
+      'landing on a page precaches exactly the next 3 pages, not more',
+      (tester) async {
+        await tester.runAsync(() => sl<ReaderPrefs>().setDirection('ltr'));
+        final sixPages = pages(6);
+        ani.register(_FakeReadingProvider('ani:m', {'u1': sixPages}));
+
+        await tester.pumpWidget(harness());
+        await settle(tester);
+
+        final cache = PaintingBinding.instance.imageCache;
+        Future<bool> tracked(int i) async {
+          final key = await CachedNetworkImageProvider(
+            sixPages[i].url,
+          ).obtainKey(ImageConfiguration.empty);
+          return cache.statusForKey(key).tracked;
+        }
+
+        // preloadWindow(0, 6) == [1, 2, 3] — those, and only those, should be
+        // registered in Flutter's global image cache.
+        expect(await tracked(1), isTrue, reason: 'page 1 should be preloaded');
+        expect(await tracked(2), isTrue, reason: 'page 2 should be preloaded');
+        expect(await tracked(3), isTrue, reason: 'page 3 should be preloaded');
+        expect(
+          await tracked(4),
+          isFalse,
+          reason: 'page 4 is outside the 3-page preload window',
+        );
+
+        await disposeHarness(tester);
+      },
+    );
   });
 }

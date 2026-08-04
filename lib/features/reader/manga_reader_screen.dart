@@ -12,26 +12,6 @@ import '../../core/repository/source_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 
-/// Test-only switch: when true, every page renders an inert stub box
-/// instead of a real `CachedNetworkImage`, and preloading is a no-op.
-/// False in production — always the real image.
-///
-/// `CachedNetworkImage` goes through `flutter_cache_manager`, which under
-/// `flutter test` hits several plugin/platform gaps that a per-image
-/// `cacheManager` override doesn't fully route around (path_provider is
-/// mockable, but the default sqflite-backed cache-info repo needs
-/// `databaseFactory`, which is never initialised in this environment; and
-/// even swapping in flutter_cache_manager's own no-op repo still schedules
-/// an internal cleanup `Timer` that trips flutter_test's
-/// no-pending-timers check at test end). None of that is fixable without
-/// either a new test-only dependency or fighting the plugin's internals, so
-/// this screen gets a widget-level seam instead: skip the real image
-/// entirely in tests. This is production-code indirection added purely to
-/// make the screen testable; see test/features/reader/manga_reader_test.dart
-/// and the task report for the full story.
-@visibleForTesting
-bool debugMangaReaderStubImages = false;
-
 /// Image reader for manga chapters — the paged/webtoon counterpart of
 /// [package:watch_app/features/reader/novel_reader_screen.dart]'s text
 /// reader. Phone-only (no TV twin, no TV focus handling needed).
@@ -157,7 +137,6 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
   }
 
   void _preload(int index, List<PageImage> pages) {
-    if (debugMangaReaderStubImages) return; // tests: image layer neutralised
     for (final i in preloadWindow(index, pages.length)) {
       final p = pages[i];
       precacheImage(
@@ -268,6 +247,11 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     _load();
   }
 
+  /// Slider drag tick — just moves the visible page and updates the label.
+  /// Preloading and progress-saving are deferred to [_commitSeek]
+  /// (`onChangeEnd`): dragging across a long chapter fires this on every
+  /// tick, and doing the image-fetch/Hive-write work there would queue
+  /// hundreds of preload requests for one drag.
   void _seekToPage(int page) {
     final pages = _pages;
     if (pages == null || pages.isEmpty) return;
@@ -280,6 +264,14 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         _verticalController.jumpTo(clamped / (pages.length - 1) * max);
       }
     }
+  }
+
+  /// Slider drag settled — preload around the page it landed on and persist
+  /// it, exactly once per drag.
+  void _commitSeek(int page) {
+    final pages = _pages;
+    if (pages == null || pages.isEmpty) return;
+    final clamped = clampPageIndex(page, pages.length);
     _preload(clamped, pages);
     _saveProgress(flush: false);
   }
@@ -426,21 +418,20 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
           minScale: 1.0,
           maxScale: 4.0,
           child: Center(
-            child: debugMangaReaderStubImages
-                ? const SizedBox(width: 40, height: 40)
-                : CachedNetworkImage(
-                    imageUrl: page.url,
-                    httpHeaders: page.headers,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) => const Center(
-                      child: CircularProgressIndicator(color: Colors.white38),
-                    ),
-                    errorWidget: (_, _, _) => const Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white38,
-                      size: 48,
-                    ),
-                  ),
+            child: CachedNetworkImage(
+              imageUrl: page.url,
+              httpHeaders: page.headers,
+              fit: BoxFit.contain,
+              // Static, not an animated spinner — see ColoredBox usage in
+              // poster_card.dart/continue_card.dart for the same convention.
+              placeholder: (_, _) =>
+                  SizedBox.expand(child: ColoredBox(color: AppColors.surface2)),
+              errorWidget: (_, _, _) => const Icon(
+                Icons.broken_image_outlined,
+                color: Colors.white38,
+                size: 48,
+              ),
+            ),
           ),
         ),
       ),
@@ -456,28 +447,28 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggleChrome,
-      child: debugMangaReaderStubImages
-          ? const SizedBox(height: 200, width: double.infinity)
-          : CachedNetworkImage(
-              imageUrl: page.url,
-              httpHeaders: page.headers,
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-              placeholder: (_, _) => const SizedBox(
-                height: 200,
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white38),
-                ),
-              ),
-              errorWidget: (_, _, _) => const SizedBox(
-                height: 200,
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  color: Colors.white38,
-                  size: 48,
-                ),
-              ),
-            ),
+      child: CachedNetworkImage(
+        imageUrl: page.url,
+        httpHeaders: page.headers,
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
+        // Fixed-height static placeholder (not a spinner) — avoids a
+        // zero-height flash in the list while still not perpetually
+        // animating; same ColoredBox convention as poster_card.dart.
+        placeholder: (_, _) => SizedBox(
+          height: 200,
+          width: double.infinity,
+          child: ColoredBox(color: AppColors.surface2),
+        ),
+        errorWidget: (_, _, _) => const SizedBox(
+          height: 200,
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: Colors.white38,
+            size: 48,
+          ),
+        ),
+      ),
     );
   }
 
@@ -620,6 +611,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
                         divisions: pageCount - 1,
                         activeColor: AppColors.accent,
                         onChanged: (v) => _seekToPage(v.round()),
+                        onChangeEnd: (v) => _commitSeek(v.round()),
                       ),
                     ),
                     Text('$pageCount', style: AppText.caption),
