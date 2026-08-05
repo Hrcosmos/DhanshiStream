@@ -640,6 +640,13 @@ class JsProvider implements BaseProvider, ReadingProvider {
       {'category': category},
     ], timeout: const Duration(seconds: 30));
     final map = jsonDecode(raw) as Map<String, dynamic>;
+    // Sozo Read manga/novel detail payloads carry the chapter list under
+    // `chapters`; Zangetsu's MediaDetail reads `episodes` (Task E4 compat
+    // alias). Only fills in when `episodes` is absent, so a Zangetsu-shaped
+    // payload's own `episodes` key always wins.
+    if (!map.containsKey('episodes') && map.containsKey('chapters')) {
+      map['episodes'] = map['chapters'];
+    }
     return MediaDetail.fromJson({...map, 'sourceId': sourceId});
   }
 
@@ -648,10 +655,26 @@ class JsProvider implements BaseProvider, ReadingProvider {
     String url, {
     String category = 'sub',
   }) async {
-    final raw = await _call('getEpisodes', [
+    final args = [
       url,
       {'category': category},
-    ]);
+    ];
+    String raw;
+    try {
+      raw = await _call('getEpisodes', args);
+    } catch (e) {
+      // Sozo Read manga/novel sources expose getChapters() instead of
+      // getEpisodes() (Task E4 compat alias) — same chapter shape, different
+      // name. Only fall back when the bootstrap reports the primary method
+      // is absent; any other failure (network, parse, a real thrown Error
+      // inside getEpisodes) must surface as-is, not get masked by a second
+      // call. Promise rejections surface as a raw JsEvalResult rather than
+      // JsRuntimeException — see `_JsHost._runCall` — so check both shapes,
+      // same as the getHome/getSettings fallback checks above.
+      final msg = e is JsRuntimeException ? e.message : e.toString();
+      if (!msg.contains('missing method: getEpisodes')) rethrow;
+      raw = await _call('getChapters', args);
+    }
     final list = (await _decodeBig(raw) as List)
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -680,10 +703,21 @@ class JsProvider implements BaseProvider, ReadingProvider {
 
   @override
   Future<ChapterText> getText(String chapterUrl) async {
+    String raw;
+    try {
+      raw = await _call('getText', [chapterUrl]);
+    } catch (e) {
+      // Sozo Read novel sources expose getChapterContent() instead of
+      // getText() (Task E4 compat alias) — same fallback rule as
+      // getEpisodes() above: only on a genuine "method missing", never on a
+      // real provider error.
+      final msg = e is JsRuntimeException ? e.message : e.toString();
+      if (!msg.contains('missing method: getText')) rethrow;
+      raw = await _call('getChapterContent', [chapterUrl]);
+    }
     // Chapter text/HTML can run long for novels, so route big payloads
     // through _decodeBig like the other listing calls rather than always
     // decoding inline on the UI thread.
-    final raw = await _call('getText', [chapterUrl]);
     final decoded = await _decodeBig(raw);
     if (decoded is Map) return ChapterText.fromJson(decoded);
     return ChapterText(html: decoded?.toString() ?? '');

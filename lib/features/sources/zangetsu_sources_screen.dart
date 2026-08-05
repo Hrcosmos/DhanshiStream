@@ -18,6 +18,7 @@ import 'bloc/sources_event.dart';
 import 'bloc/sources_state.dart';
 import 'source_settings_screen.dart';
 import 'sources_search_field.dart';
+import 'zangetsu_recommended_repos.dart';
 
 /// Dedicated Zangetsu (JS provider) ecosystem screen — Installed and
 /// Repositories as two tabs. Self-contained: creates its own [SourcesBloc]
@@ -1036,53 +1037,123 @@ class _ZAddRepoDialogState extends State<_ZAddRepoDialog> {
     });
   }
 
+  /// Fills the manifest URL field from a recommended entry — the user still
+  /// presses "Add" themselves, same as pasting a URL in by hand. Never
+  /// submits on its own.
+  void _useRecommended(({String name, String desc, String url}) repo) {
+    setState(() {
+      _urlCtrl.text = repo.url;
+      _error = null;
+    });
+  }
+
+  Widget _recommendedTile(({String name, String desc, String url}) repo) {
+    final added = widget.bloc.state.repos.any((r) => r.url == repo.url);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  repo.name,
+                  style: AppText.body.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(repo.desc, style: AppText.caption),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          if (added)
+            Text(
+              'Added',
+              style: AppText.caption.copyWith(color: AppColors.textSecondary),
+            )
+          else
+            OutlinedButton(
+              onPressed: _loading ? null : () => _useRecommended(repo),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.accent,
+                side: BorderSide(color: AppColors.accent.withValues(alpha: 0.6)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Use'),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AppColors.surface,
       title: Text('Add repo', style: AppText.headline),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            enabled: !_loading,
-            cursorColor: AppColors.accent,
-            style: AppText.body.copyWith(color: AppColors.textPrimary),
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Custom name (optional)',
-              hintText: "Leave blank to use the repo's own name",
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _nameCtrl,
+              enabled: !_loading,
+              cursorColor: AppColors.accent,
+              style: AppText.body.copyWith(color: AppColors.textPrimary),
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Custom name (optional)',
+                hintText: "Leave blank to use the repo's own name",
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _urlCtrl,
-            enabled: !_loading,
-            autofocus: true,
-            keyboardType: TextInputType.url,
-            cursorColor: AppColors.accent,
-            style: AppText.body.copyWith(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
-              labelText: 'Manifest URL',
-              hintText: 'https://.../index.json',
+            const SizedBox(height: 12),
+            TextField(
+              controller: _urlCtrl,
+              enabled: !_loading,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              cursorColor: AppColors.accent,
+              style: AppText.body.copyWith(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Manifest URL',
+                hintText: 'https://.../index.json',
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            "Paste the repo's index.json URL — the JSON file that lists "
-            'every source in the repo, not a single provider .js URL.',
-            style: AppText.caption,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
-              _error!,
-              style: AppText.caption.copyWith(color: AppColors.accent),
+              "Paste the repo's index.json URL — the JSON file that lists "
+              'every source in the repo, not a single provider .js URL.',
+              style: AppText.caption,
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: AppText.caption.copyWith(color: AppColors.accent),
+              ),
+            ],
+            if (kRecommendedZangetsuRepos.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Text(
+                'RECOMMENDED',
+                style: AppText.caption.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 4),
+              for (final r in kRecommendedZangetsuRepos) _recommendedTile(r),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(
