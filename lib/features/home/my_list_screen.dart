@@ -731,9 +731,9 @@ class _MyListViewState extends State<_MyListView> {
         const SizedBox(height: 8),
         Expanded(
           child: filtered.isEmpty
-              ? const EmptyState(
+              ? EmptyState(
                   icon: Icons.filter_list_off_rounded,
-                  message: 'Nothing here in this filter',
+                  message: myListFilteredEmptyMessage(mode),
                 )
               : GridView.builder(
                   // Bottom: clear the floating dock (its height arrives as
@@ -880,9 +880,27 @@ class _MyListViewState extends State<_MyListView> {
         ),
       );
     }
-    return const EmptyState(
+    return EmptyState(
       icon: Icons.bookmark_outline,
-      message: 'Titles you add appear here',
+      message: myListEmptyMessage(sl<ContentModeCubit>().state),
     );
   }
 }
+
+/// EmptyState message for My List's per-status/type filter turning up
+/// nothing (the mode filter itself is applied before this — see [_grid]).
+/// Anime mode's wording is unchanged; a reading mode names its own content
+/// type instead of the generic "Nothing".
+String myListFilteredEmptyMessage(ContentMode mode) => switch (mode) {
+  ContentMode.anime => 'Nothing here in this filter',
+  ContentMode.manga => 'No manga here in this filter',
+  ContentMode.novel => 'No novels here in this filter',
+};
+
+/// EmptyState message for a genuinely empty My List (nothing saved yet, of
+/// ANY type). Anime mode's wording is unchanged.
+String myListEmptyMessage(ContentMode mode) => switch (mode) {
+  ContentMode.anime => 'Titles you add appear here',
+  ContentMode.manga => 'Manga you add appear here',
+  ContentMode.novel => 'Novels you add appear here',
+};

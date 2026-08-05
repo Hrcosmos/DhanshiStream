@@ -173,4 +173,40 @@ void main() {
     expect(filtered.manga, isEmpty);
     expect(filtered.novel, isEmpty);
   });
+
+  // ── hasReadingSourcesFor (Task E2 — Home/Search/My List "no sources" gate) ─
+  // The same "is there anything installed for this reading mode" check E1's
+  // picker already needed (_SourcePickerSheetState._hasAnySources), pulled
+  // out as a top-level function so Home/Search/My List's empty states can
+  // reuse it instead of re-deriving it a third/fourth/fifth time.
+
+  test('hasReadingSourcesFor: anime mode is always false, even with reading '
+      'sources installed — anime has no reading bucket of its own', () async {
+    await _seedJsSource(id: 'js:m', type: 'manga');
+    await _seedJsSource(id: 'js:n', type: 'novel');
+    expect(hasReadingSourcesFor(ContentMode.anime), isFalse);
+  });
+
+  test('hasReadingSourcesFor: manga mode with nothing installed is false',
+      () async {
+    expect(hasReadingSourcesFor(ContentMode.manga), isFalse);
+  });
+
+  test('hasReadingSourcesFor: manga mode with a manga source installed is '
+      'true', () async {
+    await _seedJsSource(id: 'js:m', type: 'manga');
+    expect(hasReadingSourcesFor(ContentMode.manga), isTrue);
+  });
+
+  test('hasReadingSourcesFor: manga mode is unmoved by a novel-only install',
+      () async {
+    await _seedJsSource(id: 'js:n', type: 'novel');
+    expect(hasReadingSourcesFor(ContentMode.manga), isFalse);
+  });
+
+  test('hasReadingSourcesFor: novel mode with a novel source installed is '
+      'true', () async {
+    await _seedJsSource(id: 'js:n', type: 'novel');
+    expect(hasReadingSourcesFor(ContentMode.novel), isTrue);
+  });
 }

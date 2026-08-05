@@ -40,10 +40,12 @@ import 'package:watch_app/core/playback/list_status_store.dart';
 import 'package:watch_app/core/playback/my_list.dart';
 import 'package:watch_app/core/playback/watch_history.dart';
 import 'package:watch_app/core/reading/read_history.dart';
+import 'package:watch_app/core/supabase/auth_user.dart';
 import 'package:watch_app/core/supabase/supabase_service.dart';
 import 'package:watch_app/core/tracker/tracker_hub.dart';
 import 'package:watch_app/core/ui/content_row.dart';
 import 'package:watch_app/core/ui/continue_card.dart';
+import 'package:watch_app/features/auth/auth_cubit.dart';
 import 'package:watch_app/features/home/continue_section.dart';
 import 'package:watch_app/features/home/home_screen.dart' show readerFor;
 import 'package:watch_app/features/home/my_list_screen.dart';
@@ -86,6 +88,16 @@ class _FakeListStatusStore implements ListStatusStore {
   @override
   WatchStatus? statusOf(MediaItem m) => null;
 
+  @override
+  noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+
+/// Bare authenticated [AuthCubit] stand-in — only needed to reach
+/// MyListScreen's `_empty()` branch (gated on `context.watch<AuthCubit>()`),
+/// which the existing mode-filter tests never hit (their fixture list is
+/// never actually empty).
+class _FakeAuthCubit extends Cubit<AuthState> implements AuthCubit {
+  _FakeAuthCubit(super.initial);
   @override
   noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
@@ -615,6 +627,127 @@ void main() {
         expect(find.text('Anime Show'), findsNothing);
         expect(find.text('Movie Show'), findsNothing);
         expect(find.text('Manga Title'), findsNothing);
+      },
+    );
+  });
+
+  // ── Part B: My List empty-state wording (Task E2) ─────────────────────────
+  // Both of MyListScreen's EmptyStates were watch-centric wording no matter
+  // the content mode. `_empty()` (truly nothing in the list, any type) needs
+  // a logged-in AuthCubit above it — the mode-filter group above never hits
+  // that branch because its fixture list is never actually empty.
+
+  group('MyListScreen empty-state wording', () {
+    const authedState = AuthState(
+      status: AuthStatus.authenticated,
+      user: AuthUser(id: 'u1', name: 'Tester', email: 't@example.com'),
+    );
+
+    Widget authed(Widget child) => MaterialApp(
+      home: BlocProvider<AuthCubit>.value(
+        value: _FakeAuthCubit(authedState),
+        child: child,
+      ),
+    );
+
+    setUp(() async {
+      await sl.reset();
+      sl.registerSingleton<AppMode>(const AppMode(isTv: false));
+      sl.registerSingleton<TrackerHub>(TrackerHub(const []));
+      sl.registerSingleton<ListStatusStore>(_FakeListStatusStore());
+    });
+
+    tearDown(() async {
+      await sl.reset();
+    });
+
+    testWidgets(
+      'anime mode, list truly empty — unchanged wording, no button '
+      '(regression)',
+      (tester) async {
+        sl.registerSingleton<MyListStore>(_FakeMyListStore(const []));
+        sl.registerSingleton<ContentModeCubit>(
+          _FakeContentModeCubit(ContentMode.anime),
+        );
+
+        await tester.pumpWidget(authed(const MyListScreen()));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Titles you add appear here'), findsOneWidget);
+        expect(find.byType(FilledButton), findsNothing);
+      },
+    );
+
+    testWidgets('manga mode, list truly empty — reading-specific wording',
+        (tester) async {
+      sl.registerSingleton<MyListStore>(_FakeMyListStore(const []));
+      sl.registerSingleton<ContentModeCubit>(
+        _FakeContentModeCubit(ContentMode.manga),
+      );
+
+      await tester.pumpWidget(authed(const MyListScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Manga you add appear here'), findsOneWidget);
+      expect(find.text('Titles you add appear here'), findsNothing);
+    });
+
+    testWidgets('novel mode, list truly empty — reading-specific wording',
+        (tester) async {
+      sl.registerSingleton<MyListStore>(_FakeMyListStore(const []));
+      sl.registerSingleton<ContentModeCubit>(
+        _FakeContentModeCubit(ContentMode.novel),
+      );
+
+      await tester.pumpWidget(authed(const MyListScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Novels you add appear here'), findsOneWidget);
+    });
+
+    testWidgets(
+      'anime mode, list has only manga/novel items (filtered to nothing) — '
+      'unchanged "Nothing here in this filter" wording (regression)',
+      (tester) async {
+        const mangaItem = MediaItem(
+          id: 'g1',
+          title: 'Manga Title',
+          url: '/g1',
+          type: ProviderType.manga,
+          sourceId: 's',
+        );
+        sl.registerSingleton<MyListStore>(_FakeMyListStore([mangaItem]));
+        sl.registerSingleton<ContentModeCubit>(
+          _FakeContentModeCubit(ContentMode.anime),
+        );
+
+        await tester.pumpWidget(authed(const MyListScreen()));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Nothing here in this filter'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'manga mode, list has only an anime item (filtered to nothing) — '
+      'reading-specific filtered wording',
+      (tester) async {
+        const animeItem = MediaItem(
+          id: 'a1',
+          title: 'Anime Show',
+          url: '/a1',
+          type: ProviderType.anime,
+          sourceId: 's',
+        );
+        sl.registerSingleton<MyListStore>(_FakeMyListStore([animeItem]));
+        sl.registerSingleton<ContentModeCubit>(
+          _FakeContentModeCubit(ContentMode.manga),
+        );
+
+        await tester.pumpWidget(authed(const MyListScreen()));
+        await tester.pumpAndSettle();
+
+        expect(find.text('No manga here in this filter'), findsOneWidget);
       },
     );
   });

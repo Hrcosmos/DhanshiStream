@@ -6,6 +6,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
+import '../../core/mode/content_mode.dart';
+import '../../core/mode/content_mode_cubit.dart';
 import '../../core/notify/notification_service.dart';
 import '../../core/update/extension_auto_updater.dart';
 import '../../core/provider/cloudstream_provider.dart';
@@ -46,6 +48,7 @@ import '../../core/ui/mode_switcher.dart';
 import '../../core/ui/poster_card.dart';
 import '../../core/ui/row_skeleton.dart';
 import '../../core/ui/source_switcher.dart';
+import '../../core/ui/states.dart';
 import '../auth/auth_cubit.dart';
 import '../auth/reconnect.dart';
 import '../detail/detail_screen.dart';
@@ -758,12 +761,19 @@ class _HomeViewState extends State<_HomeView> {
                   else if (loadedEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
-                      child: _SourceUnavailable(
+                      child: HomeLoadedEmptyView(
+                        mode: sl<ContentModeCubit>().state,
                         sourceName: sl<SourceRepository>().displayName(
                           context.read<ActiveSourceCubit>().state,
                         ),
                         onRetry: () =>
                             context.read<HomeCubit>().load(reset: true),
+                        onInstallSources: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const ZangetsuSourcesScreen(openToRepos: true),
+                          ),
+                        ),
                       ),
                     )
                   else
@@ -792,6 +802,44 @@ class _HomeViewState extends State<_HomeView> {
         ),
       ),
     );
+  }
+}
+
+/// Home's "provider returned no sections" branch. A reading mode with
+/// literally nothing installed for it gets a message that says so, with an
+/// action into the install flow — today's [_SourceUnavailable] ("couldn't
+/// load, try again") is flat wrong there, since nothing failed, there's just
+/// nothing set up. Anime mode (and a reading mode whose installed source
+/// failed to load) keeps [_SourceUnavailable] exactly as before.
+///
+/// Extracted as its own widget — rather than inlined in [_HomeViewState]'s
+/// build — so this decision is testable without pumping the real
+/// [HomeScreen], whose `initState` fires a real network call.
+class HomeLoadedEmptyView extends StatelessWidget {
+  const HomeLoadedEmptyView({
+    super.key,
+    required this.mode,
+    required this.sourceName,
+    required this.onRetry,
+    required this.onInstallSources,
+  });
+
+  final ContentMode mode;
+  final String sourceName;
+  final VoidCallback onRetry;
+  final VoidCallback onInstallSources;
+
+  @override
+  Widget build(BuildContext context) {
+    if (mode.isReading && !hasReadingSourcesFor(mode)) {
+      return EmptyState(
+        icon: Icons.source_outlined,
+        message: 'No ${mode.label} sources yet',
+        actionLabel: 'Browse repositories',
+        onAction: onInstallSources,
+      );
+    }
+    return _SourceUnavailable(sourceName: sourceName, onRetry: onRetry);
   }
 }
 

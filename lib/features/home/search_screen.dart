@@ -32,6 +32,7 @@ import '../aniyomi/aniyomi_filter_sheet.dart';
 import '../auth/auth_screens.dart';
 import '../detail/detail_screen.dart';
 import '../player/player_screen.dart';
+import '../sources/zangetsu_sources_screen.dart';
 import 'search_screen_tv.dart';
 import 'see_all_screen.dart';
 import '../search/bloc/search_bloc.dart';
@@ -1483,6 +1484,64 @@ class _SearchViewState extends State<_SearchView> {
   }
 }
 
+/// The filter sheet's "search in these sources" category list. Anime mode's
+/// three categories (in this exact order) are the original hardcoded
+/// literal, untouched; a reading mode gets its own single category (Manga or
+/// Novel) instead of Anime/Movies & Series/NSFW, which are always empty for
+/// it anyway. Mirrors `_SourcePickerSheetState._grouped()`'s categories in
+/// source_switcher.dart. A top-level function (not inlined in
+/// [_SearchFilterSheet]) so it's unit-testable without a real [SearchBloc].
+List<({String title, List<({String id, String label, String? repo})> rows})>
+searchFilterSections(SourceBuckets buckets, ContentMode mode) {
+  final readingBucket = mode == ContentMode.manga ? buckets.manga : buckets.novel;
+  return [
+    if (!mode.isReading && buckets.anime.isNotEmpty)
+      (title: 'Anime', rows: buckets.anime),
+    if (!mode.isReading && buckets.movies.isNotEmpty)
+      (title: 'Movies & Series', rows: buckets.movies),
+    if (!mode.isReading && buckets.nsfw.isNotEmpty)
+      (title: 'NSFW', rows: buckets.nsfw),
+    if (mode.isReading && readingBucket.isNotEmpty)
+      (title: mode.label, rows: readingBucket),
+  ];
+}
+
+/// The filter sheet's "no sources" state. Anime mode's wording (a bare,
+/// button-less line) is unchanged; a reading mode gets a reading-specific
+/// message and an install CTA — same wording/route as the source picker's
+/// install CTA and Home's [HomeLoadedEmptyView].
+class SearchSourcesEmptyView extends StatelessWidget {
+  const SearchSourcesEmptyView({
+    super.key,
+    required this.mode,
+    required this.onInstallSources,
+  });
+
+  final ContentMode mode;
+  final VoidCallback onInstallSources;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!mode.isReading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(
+          child: Text('No sources installed', style: AppText.body),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28),
+      child: EmptyState(
+        icon: Icons.source_outlined,
+        message: 'No ${mode.label} sources yet',
+        actionLabel: 'Browse repositories',
+        onAction: onInstallSources,
+      ),
+    );
+  }
+}
+
 /// CloudStream-style filter sheet: content type + genre + decade selectors on
 /// top of the categorised "search in these sources" list. Content type filters
 /// results live (via the bloc); genre/decade are best-effort (see [SearchMeta]).
@@ -1493,20 +1552,10 @@ class _SearchFilterSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final buckets = filterBucketsForMode(
-      categorizedSources(),
-      sl<ContentModeCubit>().state,
-    );
+    final mode = sl<ContentModeCubit>().state;
+    final buckets = filterBucketsForMode(categorizedSources(), mode);
     final prefs = sl<SearchSourcePrefs>();
-    final sections =
-        <
-          ({String title, List<({String id, String label, String? repo})> rows})
-        >[
-          if (buckets.anime.isNotEmpty) (title: 'Anime', rows: buckets.anime),
-          if (buckets.movies.isNotEmpty)
-            (title: 'Movies & Series', rows: buckets.movies),
-          if (buckets.nsfw.isNotEmpty) (title: 'NSFW', rows: buckets.nsfw),
-        ];
+    final sections = searchFilterSections(buckets, mode);
     final allIds = [for (final s in sections) ...s.rows.map((r) => r.id)];
 
     return SafeArea(
@@ -1591,14 +1640,18 @@ class _SearchFilterSheet extends StatelessWidget {
                     // is just one source, so it's hidden.
                     if (!context.read<SearchBloc>().state.currentSourceOnly)
                       if (sections.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 28),
-                          child: Center(
-                            child: Text(
-                              'No sources installed',
-                              style: AppText.body,
-                            ),
-                          ),
+                        SearchSourcesEmptyView(
+                          mode: mode,
+                          onInstallSources: () {
+                            Navigator.of(context).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const ZangetsuSourcesScreen(
+                                  openToRepos: true,
+                                ),
+                              ),
+                            );
+                          },
                         )
                       else ...[
                         Padding(

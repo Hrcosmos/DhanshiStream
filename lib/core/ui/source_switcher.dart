@@ -186,6 +186,19 @@ SourceBuckets filterBucketsForMode(SourceBuckets buckets, ContentMode mode) {
   );
 }
 
+/// True if there's at least one installed+enabled source for [mode]'s own
+/// reading bucket. Always false for [ContentMode.anime] (it has no reading
+/// bucket of its own) — callers should already be gating on
+/// [ContentModeX.isReading] before asking. The "is there anything installed
+/// for this mode" check Home/Search/My List's empty states need, factored
+/// out of [_SourcePickerSheetState._hasAnySources] (which needed the exact
+/// same thing for the picker's pin nudge) so it's one answer, not four.
+bool hasReadingSourcesFor(ContentMode mode) {
+  if (!mode.isReading) return false;
+  final b = categorizedSources();
+  return (mode == ContentMode.manga ? b.manga : b.novel).isNotEmpty;
+}
+
 /// A compact pill button that shows the active source and opens a
 /// bottom-sheet picker when tapped. The selectable list is built
 /// dynamically from the installed-and-enabled providers in
