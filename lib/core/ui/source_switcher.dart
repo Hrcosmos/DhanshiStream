@@ -57,6 +57,10 @@ SourceBuckets categorizedSources() {
   final reg = sl<ProviderRegistry>();
   final nsfwEnabled = sl<PlaybackPrefs>().nsfwSources;
   final nsfwIds = reg.nsfwSourceIds();
+  // Resolved once for the whole bucketing pass — see [_typeOfFromMap]. This
+  // used to be reg.typeOf(e.name) AND sourceTypeOf(e.name) called per row
+  // below (two repo-manifest deserializes per row instead of one total).
+  final typeMap = reg.typeMapOf();
   ({String id, String label, String? repo}) row(e) {
     final base = (e.displayName as String).isNotEmpty
         ? e.displayName as String
@@ -78,7 +82,7 @@ SourceBuckets categorizedSources() {
       if (nsfwEnabled) nsfw.add(row(e));
       continue; // NSFW sources live only in their own group
     }
-    if (reg.typeOf(e.name) == 'anime') {
+    if (typeMap[e.name] == 'anime') {
       anime.add(row(e));
     } else {
       movies.add(row(e)); // movie / series / unknown
@@ -86,9 +90,10 @@ SourceBuckets categorizedSources() {
     // Additive only — the anime/movies routing above is UNCHANGED, so a
     // manga/novel source still lands in `movies` too (TvSourcePicker keeps
     // seeing exactly what it saw before). This is just the one extra place a
-    // reading-mode picker can actually find it. Reuses sourceTypeOf — the
-    // app's one ProviderType resolver — rather than re-deriving the type.
-    switch (sourceTypeOf(e.name)) {
+    // reading-mode picker can actually find it. Same resolution sourceTypeOf
+    // does (the app's one ProviderType resolver), just against the map
+    // already built above instead of re-deriving the type per row.
+    switch (_typeOfFromMap(e.name, typeMap)) {
       case ProviderType.manga:
         manga.add(row(e));
       case ProviderType.novel:
@@ -164,10 +169,32 @@ ProviderType sourceTypeOf(String id) {
   return ProviderType.values.asNameMap()[t] ?? ProviderType.anime;
 }
 
+/// Same resolution as [sourceTypeOf], but reads a precomputed id->type map
+/// (see [ProviderRegistry.typeMapOf]) instead of hitting the registry per
+/// call. Used by callers that resolve many ids in one pass — the repo
+/// manifests get walked once for the whole pass instead of once per id.
+ProviderType _typeOfFromMap(String id, Map<String, String> typeMap) {
+  if (id.startsWith('cs:')) {
+    final p = sl<CloudStreamManager>().get(id);
+    return p is CloudStreamProvider ? p.providerType : ProviderType.anime;
+  }
+  if (id.startsWith('ani:')) return ProviderType.anime; // Aniyomi is video-only
+  final t = typeMap[id];
+  if (t == null) return ProviderType.anime;
+  return ProviderType.values.asNameMap()[t] ?? ProviderType.anime;
+}
+
 /// Narrows a [SourceBuckets] to the rows visible in [mode]. A no-op in anime
 /// mode for today's real source sets (anime/movie are the only types in use),
 /// so the picker and search show exactly what they show today.
 SourceBuckets filterBucketsForMode(SourceBuckets buckets, ContentMode mode) {
+  // Resolved once for the whole call, not once per row — this used to be
+  // sourceTypeOf(r.id) inside the row filter below, which meant one
+  // ProviderRegistry.typeOf() (and therefore one full repo-manifest
+  // deserialize) per row across every bucket. That's the picker-open lag:
+  // switching sources is a hot, frequent action, not a cold path.
+  final typeMap = sl<ProviderRegistry>().typeMapOf();
+
   // A plain list filter, NOT a map-by-id round trip: the same sourceId can
   // legitimately appear twice in a bucket (installed from two different
   // repos — see ProviderRegistry's composite repoUrl+sourceId key), and a
@@ -175,7 +202,7 @@ SourceBuckets filterBucketsForMode(SourceBuckets buckets, ContentMode mode) {
   // picker/search.
   List<({String id, String label, String? repo})> filter(
     List<({String id, String label, String? repo})> rows,
-  ) => rows.where((r) => mode.matchesProvider(sourceTypeOf(r.id))).toList();
+  ) => rows.where((r) => mode.matchesProvider(_typeOfFromMap(r.id, typeMap))).toList();
 
   return (
     anime: filter(buckets.anime),
