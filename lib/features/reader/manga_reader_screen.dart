@@ -5,6 +5,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/di/injector.dart';
 import '../../core/models/episode.dart';
 import '../../core/models/page_content.dart';
+import '../../core/models/provider_info.dart';
 import '../../core/reading/read_history.dart';
 import '../../core/reading/read_store.dart';
 import '../../core/reading/reader_prefs.dart';
@@ -251,6 +252,7 @@ class _MangaReaderScreenState extends State<MangaReaderScreen> {
         pos: _pageIndex,
         total: pages.length,
         updatedMs: DateTime.now().millisecondsSinceEpoch,
+        type: ProviderType.manga,
       ),
       flush: flush,
     );

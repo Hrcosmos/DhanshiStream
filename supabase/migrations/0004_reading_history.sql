@@ -17,6 +17,12 @@ create table if not exists public.reading_history (
   pos integer not null default 0,
   total integer not null default 0,
   updated_ms bigint not null default 0,
+  -- 'manga' or 'novel' — which reader a chapter opens in (see ReadEntry.type
+  -- in lib/core/reading/read_history.dart). No default: the app always
+  -- writes it now, and a row missing it is read back as 'novel' client-side
+  -- (readEntryTypeFromName), not here — a DB default would silently paper
+  -- over a future write path that forgets to set it.
+  type text,
   primary key (user_key, source_id, show_id)
 );
 

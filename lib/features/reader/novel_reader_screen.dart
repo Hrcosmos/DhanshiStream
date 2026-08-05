@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/di/injector.dart';
 import '../../core/models/episode.dart';
 import '../../core/models/page_content.dart';
+import '../../core/models/provider_info.dart';
 import '../../core/reading/read_history.dart';
 import '../../core/reading/read_store.dart';
 import '../../core/reading/reader_prefs.dart';
@@ -174,6 +175,7 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
         pos: permille,
         total: 1000,
         updatedMs: DateTime.now().millisecondsSinceEpoch,
+        type: ProviderType.novel,
       ),
       flush: flush,
     );

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:watch_app/core/models/provider_info.dart';
 import 'package:watch_app/core/reading/read_history.dart';
 import 'package:watch_app/core/supabase/supabase_service.dart';
 
@@ -54,12 +55,17 @@ void main() {
     if (await dir.exists()) await dir.delete(recursive: true);
   });
 
-  ReadEntry entry(String show, {int pos = 0, int total = 20, int ts = 0}) =>
-      ReadEntry(
-        sourceId: 'js:m', showId: show, title: show, cover: null,
-        chapterId: 'ch1', chapterNumber: 1, chapterUrl: 'u',
-        pos: pos, total: total, updatedMs: ts,
-      );
+  ReadEntry entry(
+    String show, {
+    int pos = 0,
+    int total = 20,
+    int ts = 0,
+    ProviderType type = ProviderType.novel,
+  }) => ReadEntry(
+    sourceId: 'js:m', showId: show, title: show, cover: null,
+    chapterId: 'ch1', chapterNumber: 1, chapterUrl: 'u',
+    pos: pos, total: total, updatedMs: ts, type: type,
+  );
 
   test('save keeps one row per title (latest chapter wins)', () async {
     final h = ReadHistory(SupabaseService(), () => null);
@@ -282,5 +288,41 @@ void main() {
     await h.pullFromCloudIfStale();
 
     expect(h.recent(), isEmpty);
+  });
+
+  // ── ReadEntry.type (final whole-branch review, Finding 2) ───────────────
+  // The discriminator _resumeReading routes on. A round trip must keep an
+  // explicit type; a row with no 'type' key at all (every row ever written
+  // before this field existed) must default to novel — see
+  // readEntryTypeFromName's doc comment for why novel, not manga, is the
+  // safe default.
+
+  test('readEntryTypeFromName: manga round-trips, everything else '
+      '(including null — a pre-existing row) defaults to novel', () {
+    expect(readEntryTypeFromName('manga'), ProviderType.manga);
+    expect(readEntryTypeFromName('novel'), ProviderType.novel);
+    expect(readEntryTypeFromName(null), ProviderType.novel);
+    expect(readEntryTypeFromName('anime'), ProviderType.novel);
+    expect(readEntryTypeFromName('garbage'), ProviderType.novel);
+  });
+
+  test('toJson/fromJson round-trips a manga entry\'s type', () {
+    final e = entry('m', type: ProviderType.manga);
+    final back = ReadEntry.fromJson(e.toJson());
+    expect(back.type, ProviderType.manga);
+  });
+
+  test('fromJson defaults to novel when the stored map has no type key '
+      'at all (a row saved before this field existed)', () {
+    final legacy = entry('legacy').toJson()..remove('type');
+    expect(ReadEntry.fromJson(legacy).type, ProviderType.novel);
+  });
+
+  test('save() then reading back from the box preserves a manga entry\'s '
+      'type (Hive round trip, not just toJson/fromJson in memory)',
+      () async {
+    final h = ReadHistory(SupabaseService(), () => null);
+    await h.save(entry('m', type: ProviderType.manga));
+    expect(h.recent().single.type, ProviderType.manga);
   });
 }

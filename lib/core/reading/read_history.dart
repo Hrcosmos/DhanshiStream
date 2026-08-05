@@ -1,8 +1,23 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../models/provider_info.dart';
 import '../privacy/incognito_mode.dart';
 import '../supabase/supabase_service.dart';
+
+/// Parse a persisted [ReadEntry.type] name. Only 'manga'/'novel' are
+/// meaningful here; anything else — including a row saved before this field
+/// existed — falls back to [ProviderType.novel]. That's a deliberate,
+/// backward-compatible default: every entry ever written before this field
+/// existed was ALWAYS opened via NovelReaderScreen (that was true even after
+/// MangaReaderScreen shipped — [ReadEntry] had no discriminator for
+/// `_resumeReading` to route on), so defaulting a fieldless legacy row to
+/// `novel` reproduces exactly the routing it already got. A legacy manga row
+/// keeps today's (pre-existing) mis-routing instead of gaining a NEW failure
+/// mode; only entries saved from this point on carry a real type and route
+/// correctly.
+ProviderType readEntryTypeFromName(String? name) =>
+    name == ProviderType.manga.name ? ProviderType.manga : ProviderType.novel;
 
 class ReadEntry {
   ReadEntry({
@@ -16,12 +31,17 @@ class ReadEntry {
     required this.pos,
     required this.total,
     required this.updatedMs,
+    required this.type,
   });
 
   final String sourceId, showId, title, chapterId, chapterUrl;
   final String? cover;
   final double? chapterNumber;
   final int pos, total, updatedMs;
+
+  /// manga or novel — which reader [showId]'s chapters open in. See
+  /// [readEntryTypeFromName] for the missing/legacy-row default.
+  final ProviderType type;
 
   /// Same finished rule as [ReadStore]: total == 1000 is the novel
   /// scroll-permille convention (>=950 counts as done); otherwise last
@@ -39,6 +59,7 @@ class ReadEntry {
     'pos': pos,
     'total': total,
     'updatedMs': updatedMs,
+    'type': type.name,
   };
 
   factory ReadEntry.fromJson(Map<String, dynamic> m) => ReadEntry(
@@ -52,6 +73,7 @@ class ReadEntry {
     pos: (m['pos'] as num?)?.toInt() ?? 0,
     total: (m['total'] as num?)?.toInt() ?? 0,
     updatedMs: (m['updatedMs'] as num?)?.toInt() ?? 0,
+    type: readEntryTypeFromName(m['type'] as String?),
   );
 }
 
@@ -137,6 +159,7 @@ class ReadHistory {
     'pos': e.pos,
     'total': e.total,
     'updated_ms': e.updatedMs,
+    'type': e.type.name,
   };
 
   Future<void> _pushToCloud(String key, ReadEntry e, {bool force = false}) async {
@@ -239,6 +262,7 @@ class ReadHistory {
           'pos': m['pos'],
           'total': m['total'],
           'updatedMs': m['updated_ms'],
+          'type': m['type'],
         });
       }
       _markPulled();

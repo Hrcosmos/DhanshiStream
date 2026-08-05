@@ -30,6 +30,7 @@ import '../../core/announce/announcement.dart';
 import '../announce/announcement_sheet.dart';
 import '../community/community_sheet.dart';
 import '../notify/subscriptions_screen.dart';
+import '../reader/manga_reader_screen.dart';
 import '../reader/novel_reader_screen.dart';
 import '../sources/aniyomi_repo_tab.dart' show kAniyomiReposBoxName;
 import '../update/update_dialog.dart';
@@ -356,13 +357,15 @@ class _HomeViewState extends State<_HomeView> {
   /// CHAPTER's own url (not the show's page url — unlike [HistoryEntry],
   /// which has both), so this can't re-resolve the show's full chapter list
   /// the way [_resume] does for video. Instead it reopens exactly that one
-  /// chapter at its saved scroll position (restored by NovelReaderScreen
-  /// itself via ReadStore) — prev/next chapter navigation isn't available
-  /// from here, only from the title's own Detail screen.
+  /// chapter at its saved scroll position (restored by the reader itself via
+  /// ReadStore) — prev/next chapter navigation isn't available from here,
+  /// only from the title's own Detail screen.
   ///
-  /// Manga reader doesn't exist yet (task-13), so every entry today is a
-  /// novel one; this can route straight to [NovelReaderScreen] without
-  /// needing to know the entry's reading type.
+  /// Routes to [MangaReaderScreen] or [NovelReaderScreen] by [ReadEntry.type]
+  /// — see [readerFor]. [ReadEntry] has no malId of its own (it's populated
+  /// from the tapped MediaItem/detail at read-start, same as WatchHistory's
+  /// scrobbleTitle path), so a resumed session still can't scrobble; that's
+  /// an existing gap, not something this resume path can close on its own.
   Future<void> _resumeReading(ReadEntry e) async {
     final chapter = Episode(
       id: e.chapterId,
@@ -374,16 +377,7 @@ class _HomeViewState extends State<_HomeView> {
     );
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => NovelReaderScreen(
-          sourceId: e.sourceId,
-          showId: e.showId,
-          showTitle: e.title,
-          cover: e.cover,
-          chapters: [chapter],
-          startIndex: 0,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => readerFor(e, chapter)),
     );
     if (mounted) setState(() {});
   }
@@ -869,4 +863,32 @@ class _SourceUnavailable extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The reader `_resumeReading` pushes for a resumed
+/// [ReadEntry]: [MangaReaderScreen] for [ProviderType.manga], otherwise
+/// [NovelReaderScreen] (novel, and [ReadEntry.type]'s legacy-row default).
+/// Pulled out as a plain top-level function so the routing decision is
+/// testable without pumping the whole [HomeScreen] (whose initState makes a
+/// real update-check network call and opens community/announcement Hive
+/// boxes).
+Widget readerFor(ReadEntry e, Episode chapter) {
+  if (e.type == ProviderType.manga) {
+    return MangaReaderScreen(
+      sourceId: e.sourceId,
+      showId: e.showId,
+      showTitle: e.title,
+      cover: e.cover,
+      chapters: [chapter],
+      startIndex: 0,
+    );
+  }
+  return NovelReaderScreen(
+    sourceId: e.sourceId,
+    showId: e.showId,
+    showTitle: e.title,
+    cover: e.cover,
+    chapters: [chapter],
+    startIndex: 0,
+  );
 }

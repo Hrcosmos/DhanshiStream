@@ -32,6 +32,7 @@ import 'package:watch_app/core/app_mode.dart';
 import 'package:watch_app/core/di/injector.dart';
 import 'package:watch_app/core/mode/content_mode.dart';
 import 'package:watch_app/core/mode/content_mode_cubit.dart';
+import 'package:watch_app/core/models/episode.dart';
 import 'package:watch_app/core/models/media_item.dart';
 import 'package:watch_app/core/models/provider_info.dart';
 import 'package:watch_app/core/models/watch_status.dart';
@@ -44,7 +45,10 @@ import 'package:watch_app/core/tracker/tracker_hub.dart';
 import 'package:watch_app/core/ui/content_row.dart';
 import 'package:watch_app/core/ui/continue_card.dart';
 import 'package:watch_app/features/home/continue_section.dart';
+import 'package:watch_app/features/home/home_screen.dart' show readerFor;
 import 'package:watch_app/features/home/my_list_screen.dart';
+import 'package:watch_app/features/reader/manga_reader_screen.dart';
+import 'package:watch_app/features/reader/novel_reader_screen.dart';
 
 // ── Shared fakes ─────────────────────────────────────────────────────────────
 
@@ -256,6 +260,7 @@ void main() {
                         pos: 3,
                         total: 20,
                         updatedMs: 1,
+                        type: ProviderType.novel,
                       ),
                     ],
                     onResumeReading: (e) => resumed = e,
@@ -476,6 +481,7 @@ void main() {
               pos: 1,
               total: 20,
               updatedMs: 1,
+              type: ProviderType.novel,
             ),
           ),
         );
@@ -611,5 +617,40 @@ void main() {
         expect(find.text('Manga Title'), findsNothing);
       },
     );
+  });
+
+  // ── readerFor (final whole-branch review, Finding 2) ──────────────────────
+  // _resumeReading used to route every Continue Reading tap straight to
+  // NovelReaderScreen, regardless of the entry's actual type — a leftover
+  // from before MangaReaderScreen existed. readerFor is the extracted
+  // decision the fix routes through; plain object construction, no pump
+  // needed (and HomeScreen itself can't be pumped here — see the file
+  // header comment).
+
+  group('readerFor routing', () {
+    const chapter = Episode(id: 'c1', title: 'Chapter 1', url: '/c1', number: 1);
+
+    ReadEntry entryOf(ProviderType type) => ReadEntry(
+      sourceId: 'src',
+      showId: 'show',
+      title: 'Title',
+      chapterId: 'c1',
+      chapterNumber: 1,
+      chapterUrl: '/c1',
+      pos: 1,
+      total: 20,
+      updatedMs: 1,
+      type: type,
+    );
+
+    test('a manga ReadEntry routes to MangaReaderScreen', () {
+      expect(readerFor(entryOf(ProviderType.manga), chapter),
+          isA<MangaReaderScreen>());
+    });
+
+    test('a novel ReadEntry routes to NovelReaderScreen', () {
+      expect(readerFor(entryOf(ProviderType.novel), chapter),
+          isA<NovelReaderScreen>());
+    });
   });
 }
