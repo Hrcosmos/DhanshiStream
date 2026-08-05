@@ -109,7 +109,7 @@ void main() {
 
     expect(sources, hasLength(1));
     expect(sources.single.pkg, 'com.test.manga');
-    expect(sources.single.id, 42);
+    expect(sources.single.sourceId, 'mihon:42');
 
     // The manager must have been populated, keyed under mihon:<id> — NOT
     // ani: (spec Decision 1: ani: is hardcoded to anime by sourceTypeOf).

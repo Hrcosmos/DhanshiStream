@@ -1,18 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watch_app/core/aniyomi/aniyomi_repo.dart';
 import 'package:watch_app/core/mihon/mihon_manager.dart';
+import 'package:watch_app/core/mihon/mihon_provider.dart';
 import 'package:watch_app/core/mihon/mihon_source_info.dart';
 import 'package:watch_app/core/mihon/mihon_update.dart';
 
-MihonSourceInfo _src(int id, String pkg, int code) => MihonSourceInfo(
-      id: id,
-      name: 'S$id',
-      lang: 'en',
-      baseUrl: '',
-      pkg: pkg,
-      nsfw: false,
-      version: '0.0.$code',
-      versionCode: code,
+MihonProvider _src(int id, String pkg, int code) => MihonProvider(
+      info: MihonSourceInfo(
+        id: id,
+        name: 'S$id',
+        lang: 'en',
+        baseUrl: '',
+        pkg: pkg,
+        nsfw: false,
+        version: '0.0.$code',
+        versionCode: code,
+      ),
     );
 
 MihonUpdate _upd(String pkg, int from, int to) => MihonUpdate(

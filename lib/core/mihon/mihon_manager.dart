@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 
 import 'mihon_extension_service.dart'; // also re-exports mihon_source_info.dart
+import 'mihon_provider.dart';
 import 'mihon_update.dart';
 
-/// Holds all registered Mihon manga source descriptors — the manga twin of
+/// Holds all registered Mihon manga sources — the manga twin of
 /// `AniyomiManager` (`lib/core/provider/provider_manager.dart:837`).
 ///
 /// Deliberately duplicated rather than shared (spec Decision 3) so the
@@ -13,16 +14,16 @@ import 'mihon_update.dart';
 /// path depends on, and this manager needs none of its library-private
 /// members, so there is no technical reason to risk touching it.
 ///
-/// Unlike [AniyomiManager], which stores fully-wired `BaseProvider` instances
-/// (`AniyomiProvider`), this manager stores [MihonSourceInfo] directly:
-/// `MihonProvider` — the `BaseProvider` implementation that will wrap these
-/// descriptors for the reading UI — is a later task (out of scope here per
-/// the M5b spec). The `mihon:<id>` id prefix (spec Decision 1 — not `ani:`,
-/// which `sourceTypeOf` hardcodes to anime) is applied by [idFor] since there
-/// is no provider layer yet to apply it the way `AniyomiProvider.sourceId`
-/// does for the anime path.
+/// Stores fully-wired [MihonProvider] instances, exactly like [AniyomiManager]
+/// stores `AniyomiProvider`s — [MihonSourceInfo] was only a placeholder value
+/// type until `MihonProvider` (M6) existed. The `mihon:<id>` id prefix (spec
+/// Decision 1 — not `ani:`, which `sourceTypeOf` hardcodes to anime) is
+/// [MihonProvider.sourceId] itself, so [register]/[registerAll] key by that
+/// directly, same as `AniyomiManager` keys by `AniyomiProvider.sourceId`.
+/// [idFor] remains as the standalone namespacing helper (still used by
+/// `installFromRepo`-adjacent tests and any caller that only has a raw id).
 class MihonManager extends ChangeNotifier {
-  final Map<String, MihonSourceInfo> _sources = {};
+  final Map<String, MihonProvider> _sources = {};
 
   /// Available updates keyed by repo base URL. Mirrors AniyomiManager._updates.
   final Map<String, List<MihonUpdate>> _updates = {};
@@ -110,32 +111,32 @@ class MihonManager extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// All registered Mihon sources (`mihon:*` source ids).
-  List<MihonSourceInfo> get all => _sources.values.toList();
+  /// All registered Mihon providers (`mihon:*` source ids).
+  List<MihonProvider> get all => _sources.values.toList();
 
-  /// Resolves a source by its `mihon:<sourceId>` identifier, or null when not
-  /// installed.
-  MihonSourceInfo? get(String sourceId) => _sources[sourceId];
+  /// Resolves a provider by its `mihon:<sourceId>` identifier, or null when
+  /// not installed.
+  MihonProvider? get(String sourceId) => _sources[sourceId];
 
-  /// Register [info] under its namespaced `mihon:<id>`. Replaces any existing
-  /// entry with the same id.
-  void register(MihonSourceInfo info) {
-    _sources[idFor(info.id)] = info;
+  /// Register [provider] under its [MihonProvider.sourceId]. Replaces any
+  /// existing entry with the same id.
+  void register(MihonProvider provider) {
+    _sources[provider.sourceId] = provider;
     notifyListeners();
   }
 
-  /// Batch-register [infos]; notifies listeners once when non-empty.
-  void registerAll(List<MihonSourceInfo> infos) {
-    for (final s in infos) {
-      _sources[idFor(s.id)] = s;
+  /// Batch-register [providers]; notifies listeners once when non-empty.
+  void registerAll(List<MihonProvider> providers) {
+    for (final p in providers) {
+      _sources[p.sourceId] = p;
     }
-    if (infos.isNotEmpty) notifyListeners();
+    if (providers.isNotEmpty) notifyListeners();
   }
 
-  /// Removes all sources that match [predicate] and notifies listeners when at
-  /// least one was removed. Used by the uninstall flow to remove all sources
-  /// that belong to a given extension package.
-  void removeWhere(bool Function(MihonSourceInfo info) predicate) {
+  /// Removes all providers that match [predicate] and notifies listeners when
+  /// at least one was removed. Used by the uninstall flow to remove all
+  /// sources that belong to a given extension package.
+  void removeWhere(bool Function(MihonProvider provider) predicate) {
     final toRemove = _sources.entries
         .where((e) => predicate(e.value))
         .map((e) => e.key)

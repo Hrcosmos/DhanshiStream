@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../aniyomi/aniyomi_repo.dart';
 import 'mihon_manager.dart';
+import 'mihon_provider.dart';
 import 'mihon_source_info.dart';
 import 'mihon_update.dart';
 
@@ -24,9 +25,9 @@ export 'mihon_source_info.dart';
 /// `loadInstalled`, `listSources`, `getFilterList`, `hasSourceSettings`,
 /// `openSourceSettings`. The other 7 (`getPopular`, `getLatest`, `search`,
 /// `getDetails`, `getChapters`, `getPages`, `getImage`) are per-source data
-/// calls that belong to `MihonProvider`, a later task — out of scope here.
-/// All methods below are thin channel invocations; no caching or business
-/// logic lives here.
+/// calls that belong to `MihonProvider` (`mihon_provider.dart`) — out of
+/// scope here. All methods below are thin channel invocations; no caching or
+/// business logic lives here.
 ///
 /// `AniyomiRepo`/`AniyomiRepoEntry` (`lib/core/aniyomi/aniyomi_repo.dart`)
 /// are imported and used UNMODIFIED: Mihon's repo `index.min.json` is
@@ -114,7 +115,7 @@ class MihonExtensionService {
   }
 
   /// Downloads the extension APK from [entry.apkUrl], installs it, then
-  /// returns every new [MihonSourceInfo] in the package.
+  /// builds a [MihonProvider] for every new source in the package.
   ///
   /// Steps:
   /// 1. Download the APK to `<app-support>/mihon/<pkg>.apk` (or
@@ -124,14 +125,14 @@ class MihonExtensionService {
   ///    matches [entry.pkg].
   /// 4. Persist `pkg → apk path` in the `'mihon_installed'` Hive box so
   ///    [loadInstalled] can restore sources on the next cold start.
-  /// 5. Register each new source in the optional [manager] (falls back to
+  /// 5. Register each new provider in the optional [manager] (falls back to
   ///    `GetIt.instance<MihonManager>()` when the type is registered there).
   ///
   /// Never throws — returns `[]` on any failure and logs the error.
   ///
   /// [downloader] lets callers (and tests) substitute the download step without
   /// a real network connection. When omitted the method calls `sl<Dio>().download`.
-  Future<List<MihonSourceInfo>> installFromRepo(
+  Future<List<MihonProvider>> installFromRepo(
     AniyomiRepoEntry entry, {
     Dio? dio,
     Directory? apkDirectory,
@@ -170,7 +171,10 @@ class MihonExtensionService {
       // 3. Install and list sources.
       await installExtension(apkPath);
       final allSources = await listSources();
-      final sources = allSources.where((s) => s.pkg == entry.pkg).toList();
+      final providers = allSources
+          .where((s) => s.pkg == entry.pkg)
+          .map((s) => MihonProvider(info: s))
+          .toList();
 
       // 4. Persist pkg → apk path so loadInstalled can restore on next boot.
       if (Hive.isBoxOpen(installedBoxName)) {
@@ -182,9 +186,9 @@ class MihonExtensionService {
           (GetIt.instance.isRegistered<MihonManager>()
               ? GetIt.instance.get<MihonManager>()
               : null);
-      effectiveManager?.registerAll(sources);
+      effectiveManager?.registerAll(providers);
 
-      return sources;
+      return providers;
     } catch (e, st) {
       debugPrint('[mihon] installFromRepo(${entry.pkg}) failed: $e\n$st');
       return [];
