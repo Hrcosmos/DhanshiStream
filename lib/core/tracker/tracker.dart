@@ -128,6 +128,15 @@ abstract interface class Tracker implements Listenable {
   /// failing that, [imdbId] (Simkl accepts an imdb id). [kind] selects which
   /// list this targets (anime vs. manga/novel); defaults to anime so every
   /// existing call site is unaffected.
+  ///
+  /// [kind] carries its default HERE, at the interface, unlike the equally-
+  /// bare-looking [tmdbIsTv] below (no default, no `required`): every call
+  /// site that reaches this method through a concrete class (TrackerHub,
+  /// SimklService, ...) already passes tmdbIsTv explicitly, but
+  /// tracker_entry_sheet.dart calls through a bare `Tracker`-typed variable
+  /// and never passes `kind:`. `MediaKind` is non-nullable, so that call only
+  /// type-checks because the interface itself supplies the default — don't
+  /// "clean this up" to match tmdbIsTv, it'll stop compiling.
   Future<void> markWatching({
     int? malId,
     String? title,
