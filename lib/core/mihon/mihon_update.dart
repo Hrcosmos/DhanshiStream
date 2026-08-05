@@ -4,9 +4,10 @@ import '../aniyomi/aniyomi_repo.dart';
 ///
 /// Structural twin of [AniyomiUpdate] (`lib/core/aniyomi/aniyomi_update.dart`) —
 /// duplicated per spec Decision 3 rather than shared. [entry] is typed
-/// [AniyomiRepoEntry] because Mihon's repo index is byte-identical in shape to
-/// Aniyomi's, so `AniyomiRepo`/`AniyomiRepoEntry` are reused unchanged rather
-/// than re-derived (spec, verbatim). Comparison is by integer [availableCode]
+/// [AniyomiRepoEntry] because that type carries everything the install needs
+/// and is reused unchanged — the Mihon index has its own shape, but
+/// `MihonRepo` (`mihon_repo.dart`) maps it onto this same entry type.
+/// Comparison is by integer [availableCode]
 /// vs the installed versionCode; [availableVersion] is the human versionName
 /// shown on the Update button.
 class MihonUpdate {

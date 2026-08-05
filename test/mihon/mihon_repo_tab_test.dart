@@ -70,9 +70,9 @@ void main() {
         'https://raw.githubusercontent.com/keiyoushi/extensions/repo',
       );
       expect(repo.desc, isNotEmpty);
-      // The URL must be the bare repo base — fetchIndex appends
-      // index.min.json itself, so a URL that already ends with it would
-      // double up and 404.
+      // The URL must be the bare repo base — fetchIndex appends index.json
+      // itself, so a URL that already ends with an index file would double up
+      // and 404.
       expect(repo.url, isNot(endsWith('index.min.json')));
     });
   });
@@ -273,6 +273,46 @@ void main() {
       expect(installCalled, isTrue);
       expect(installedEntry?.name, 'Fake Manga');
       expect(installedEntry?.pkg, 'com.fake.manga');
+    });
+
+    // keiyoushi's real index has 1,369 extensions. The list used to be an
+    // eager Column, i.e. ~2,700 widgets built in one frame the moment the
+    // section expanded.
+    testWidgets('builds only the on-screen rows for a keiyoushi-sized repo',
+        (tester) async {
+      final many = [
+        for (var i = 0; i < 1369; i++) _fakeEntry('Manga $i', 'com.fake.m$i'),
+      ];
+
+      await tester.pumpWidget(_wrap(
+        MihonRepoTab(
+          repoUrls: const ['https://repo.example.com'],
+          onRemoveRepo: (_) {},
+          fetchIndexFn: (_) async => many,
+          installedPkgsFn: (_) => false,
+        ),
+      ));
+
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300)); // AnimatedSize
+
+      // The first rows are real and interactive…
+      expect(find.text('Manga 0'), findsOneWidget);
+      final builtRows = tester.widgetList(find.text('Install')).length;
+      expect(builtRows, greaterThan(0));
+      // …but the other ~1,350 were never built.
+      expect(
+        builtRows,
+        lessThan(100),
+        reason: 'expected a virtualized list, got $builtRows of 1369 rows',
+      );
+
+      // Rows further down are reachable by scrolling.
+      await tester.drag(find.text('Manga 0'), const Offset(0, -1500));
+      await tester.pump();
+      expect(find.text('Manga 0'), findsNothing);
+      expect(find.textContaining('Manga '), findsWidgets);
     });
 
     testWidgets(

@@ -6,7 +6,7 @@
 // (the debug-row update-button seam).
 //
 // Deliberately does NOT pre-seed a repo URL before pumping the Repositories
-// tab: MihonRepoTab kicks off a real (unmocked) `AniyomiRepo.fetchIndex`
+// tab: MihonRepoTab kicks off a real (unmocked) `MihonRepo.fetchIndex`
 // network call as soon as it has a non-empty repoUrls list, and this screen
 // (like its Aniyomi twin) doesn't inject a fetchIndexFn seam — so a
 // pre-seeded URL would leave a live network Future in flight with no way to

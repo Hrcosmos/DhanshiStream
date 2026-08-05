@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../aniyomi/aniyomi_repo.dart';
 import 'mihon_manager.dart';
 import 'mihon_provider.dart';
+import 'mihon_repo.dart';
 import 'mihon_source_info.dart';
 import 'mihon_update.dart';
 
@@ -29,10 +30,10 @@ export 'mihon_source_info.dart';
 /// scope here. All methods below are thin channel invocations; no caching or
 /// business logic lives here.
 ///
-/// `AniyomiRepo`/`AniyomiRepoEntry` (`lib/core/aniyomi/aniyomi_repo.dart`)
-/// are imported and used UNMODIFIED: Mihon's repo `index.min.json` is
-/// byte-identical in shape to Aniyomi's, so there is nothing manga-specific
-/// to parse there.
+/// [AniyomiRepoEntry] (`lib/core/aniyomi/aniyomi_repo.dart`) is reused
+/// UNMODIFIED as the entry type, but the index is read by [MihonRepo], not
+/// `AniyomiRepo`: Mihon repos publish `index.json` in a different shape (see
+/// `mihon_repo.dart`).
 class MihonExtensionService {
   static const MethodChannel _channel = MethodChannel('zangetsu/mihon');
 
@@ -238,7 +239,7 @@ class MihonExtensionService {
     Future<List<AniyomiRepoEntry>> Function(String url)? fetchIndex,
   }) async {
     try {
-      final fetch = fetchIndex ?? AniyomiRepo.fetchIndex;
+      final fetch = fetchIndex ?? MihonRepo.fetchIndex;
       final entries = await fetch(repoUrl);
       final out = <MihonUpdate>[];
       for (final e in entries) {

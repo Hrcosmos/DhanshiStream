@@ -6,6 +6,7 @@ import '../../core/aniyomi/aniyomi_repo.dart';
 import '../../core/di/injector.dart';
 import '../../core/mihon/mihon_extension_service.dart';
 import '../../core/mihon/mihon_manager.dart';
+import '../../core/mihon/mihon_repo.dart';
 import '../../core/mihon/mihon_update.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
@@ -25,7 +26,7 @@ const String kMihonReposBoxName = 'mihon_repos';
 
 /// Dialog for adding a Mihon manga extension repository.
 ///
-/// Returns the chosen repo URL (base URL without `/index.min.json`) via
+/// Returns the chosen repo URL (base URL without `/index.json`) via
 /// [Navigator.pop(context, url)] when the user picks a recommendation or
 /// submits the URL field.  Returns null on cancel.
 ///
@@ -136,7 +137,7 @@ class _MihonAddRepoDialogState extends State<MihonAddRepoDialog> {
             const SizedBox(height: 10),
             Text(
               "Paste the repo's base URL — the app appends "
-              '"/index.min.json" automatically.',
+              '"/index.json" automatically.',
               style: AppText.caption,
             ),
             if (kRecommendedMihonRepos.isNotEmpty) ...[
@@ -190,9 +191,9 @@ class _MihonAddRepoDialogState extends State<MihonAddRepoDialog> {
 ///
 /// All four optional callbacks are injectable seams for widget tests so the
 /// network, native channel, and Hive are never touched:
-/// - [fetchIndexFn]: replaces [AniyomiRepo.fetchIndex] — imported unmodified
-///   from the anime path, since Mihon's `index.min.json` is byte-identical
-///   in shape (spec Decision 3's documented exception).
+/// - [fetchIndexFn]: replaces [MihonRepo.fetchIndex] (the manga index reader —
+///   the anime `AniyomiRepo.fetchIndex` reads a different file in a different
+///   shape and returns two deprecation stubs for keiyoushi).
 /// - [installFn]: replaces [MihonExtensionService.installFromRepo].
 /// - [uninstallFn]: replaces the default uninstall logic.
 /// - [installedPkgsFn]: replaces the Hive-box installed check.
@@ -336,7 +337,7 @@ class _MihonRepoSectionState extends State<_MihonRepoSection> {
 
   Future<void> _fetchCatalog() async {
     try {
-      final fn = widget.fetchIndexFn ?? AniyomiRepo.fetchIndex;
+      final fn = widget.fetchIndexFn ?? MihonRepo.fetchIndex;
       final entries = await fn(widget.url);
       if (mounted) {
         setState(() {
@@ -708,22 +709,47 @@ class _MihonRepoSectionState extends State<_MihonRepoSection> {
         ),
       );
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final entry in entries) ...[
-          const Divider(height: 0.5, thickness: 0.5, color: AppColors.hairline),
-          _MihonExtensionRow(
-            entry: entry,
-            installed: _isInstalled(entry.pkg),
-            installFn: widget.installFn,
-            uninstallFn: widget.uninstallFn,
-            onInstalled: () => setState(() => _installedPkgs.add(entry.pkg)),
-            onUninstalled: () =>
-                setState(() => _installedPkgs.remove(entry.pkg)),
-          ),
-        ],
-      ],
+    // keiyoushi ships 1,300+ extensions in one repo, so an eager Column here
+    // meant ~2,700 widgets built in a single frame. Capping the height gives
+    // the ListView a real viewport, so only the visible rows get built; a repo
+    // whose list is shorter than the cap still sizes to its content and looks
+    // exactly like it did before.
+    //
+    // ponytail: a capped inner scroller rather than slivers — hoisting the rows
+    // into the tab's scroll view would mean rewriting it as a CustomScrollView
+    // and giving up the collapse animation. Worth doing if nested scrolling
+    // with several large repos open turns out to annoy people.
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+      ),
+      child: ListView.builder(
+        padding: EdgeInsets.zero,
+        shrinkWrap: true,
+        itemCount: entries.length,
+        itemBuilder: (context, i) {
+          final entry = entries[i];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Divider(
+                height: 0.5,
+                thickness: 0.5,
+                color: AppColors.hairline,
+              ),
+              _MihonExtensionRow(
+                entry: entry,
+                installed: _isInstalled(entry.pkg),
+                installFn: widget.installFn,
+                uninstallFn: widget.uninstallFn,
+                onInstalled: () => setState(() => _installedPkgs.add(entry.pkg)),
+                onUninstalled: () =>
+                    setState(() => _installedPkgs.remove(entry.pkg)),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

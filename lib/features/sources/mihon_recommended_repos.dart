@@ -6,7 +6,7 @@ const List<({String name, String desc, String url})> kRecommendedMihonRepos = [
   (
     name: 'Keiyoushi',
     desc: 'The main community manga repo — 1,300+ sources across many languages',
-    // Base URL for the repo; index.min.json is appended by AniyomiRepo.fetchIndex.
+    // Base URL for the repo; index.json is appended by MihonRepo.fetchIndex.
     url: 'https://raw.githubusercontent.com/keiyoushi/extensions/repo',
   ),
 ];
