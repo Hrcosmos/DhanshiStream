@@ -83,10 +83,11 @@ object MihonExtensionLoader {
      *
      * We use a permissive continuous range rather than mirroring Mihon's exact {1.4, 1.6}
      * allow-list: 1.0..2.0 covers every observed value with headroom on both sides (older 1.x
-     * extensions still floating around unrepacked, and future 1.7/1.8/1.9 minor bumps) while
-     * still rejecting an actual major-version break (2.x), which would mean the vendored
-     * interface tree (pinned to the current source-api) is genuinely incompatible. A gate that's
-     * too strict silently rejects working extensions; this one only fails on a real API break.
+     * extensions still floating around unrepacked, and future 1.7/1.8/1.9 minor bumps). The
+     * range is inclusive, so a "2.0.x" extension (libVersion 2.0) is still accepted — only a
+     * "2.1+" bump, which would mean the vendored interface tree (pinned to the current
+     * source-api) is genuinely out of date, gets rejected. A gate that's too strict silently
+     * rejects working extensions; this one only fails on a real API break past 2.0.
      */
     const val MANGA_LIB_VERSION_MIN = 1.0
 
