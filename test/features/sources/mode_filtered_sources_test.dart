@@ -163,6 +163,8 @@ void main() {
           ],
           movies: const <({String id, String label, String? repo})>[],
           nsfw: const <({String id, String label, String? repo})>[],
+          manga: const <({String id, String label, String? repo})>[],
+          novel: const <({String id, String label, String? repo})>[],
         );
         final filtered = filterBucketsForMode(buckets, ContentMode.anime);
         expect(filtered.anime, buckets.anime); // byte-identical: all 3 survive, in order

@@ -12,13 +12,21 @@ import '../provider/provider_manager.dart';
 import '../provider/provider_registry.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
+import 'states.dart';
 
 /// Installed-and-enabled sources bucketed by category, each as an `(id, label)`
 /// row. Reused by the source switcher and the search source picker.
+///
+/// [manga]/[novel] are additive: a reading-typed JS source ALSO still lands in
+/// [movies] exactly as it always has (that classification is untouched), so
+/// [TvSourcePicker] — which reads only anime/movies/nsfw and has no mode
+/// filter — renders exactly as it did before these two fields existed.
 typedef SourceBuckets = ({
   List<({String id, String label, String? repo})> anime,
   List<({String id, String label, String? repo})> movies,
   List<({String id, String label, String? repo})> nsfw,
+  List<({String id, String label, String? repo})> manga,
+  List<({String id, String label, String? repo})> novel,
 });
 
 /// Short repo identifier from a manifest URL (the GitHub repo name, else the
@@ -63,6 +71,8 @@ SourceBuckets categorizedSources() {
   final anime = <({String id, String label, String? repo})>[];
   final movies = <({String id, String label, String? repo})>[];
   final nsfw = <({String id, String label, String? repo})>[];
+  final manga = <({String id, String label, String? repo})>[];
+  final novel = <({String id, String label, String? repo})>[];
   for (final e in (enabled..sort(byLabel))) {
     if (nsfwIds.contains(e.name)) {
       if (nsfwEnabled) nsfw.add(row(e));
@@ -72,6 +82,20 @@ SourceBuckets categorizedSources() {
       anime.add(row(e));
     } else {
       movies.add(row(e)); // movie / series / unknown
+    }
+    // Additive only — the anime/movies routing above is UNCHANGED, so a
+    // manga/novel source still lands in `movies` too (TvSourcePicker keeps
+    // seeing exactly what it saw before). This is just the one extra place a
+    // reading-mode picker can actually find it. Reuses sourceTypeOf — the
+    // app's one ProviderType resolver — rather than re-deriving the type.
+    switch (sourceTypeOf(e.name)) {
+      case ProviderType.manga:
+        manga.add(row(e));
+      case ProviderType.novel:
+        novel.add(row(e));
+      case ProviderType.anime:
+      case ProviderType.movie:
+        break;
     }
   }
 
@@ -115,8 +139,10 @@ SourceBuckets categorizedSources() {
 
   anime.sort(byRowLabel);
   movies.sort(byRowLabel);
+  manga.sort(byRowLabel);
+  novel.sort(byRowLabel);
 
-  return (anime: anime, movies: movies, nsfw: nsfw);
+  return (anime: anime, movies: movies, nsfw: nsfw, manga: manga, novel: novel);
 }
 
 /// Best-effort [ProviderType] for a source [id] — used to filter the picker
@@ -155,6 +181,8 @@ SourceBuckets filterBucketsForMode(SourceBuckets buckets, ContentMode mode) {
     anime: filter(buckets.anime),
     movies: filter(buckets.movies),
     nsfw: filter(buckets.nsfw),
+    manga: filter(buckets.manga),
+    novel: filter(buckets.novel),
   );
 }
 
@@ -168,10 +196,18 @@ class SourceSwitcher extends StatelessWidget {
     super.key,
     required this.currentId,
     required this.onChanged,
+    this.onInstallSources,
   });
 
   final String currentId;
   final void Function(String id) onChanged;
+
+  /// Opens the install flow (Zangetsu sources → Repositories) — shown as a
+  /// button on the picker's empty state when a reading mode has no sources
+  /// installed yet. Null → the empty state just has no button (today's
+  /// anime-mode behavior, and a safe no-op for any caller that hasn't wired
+  /// this up).
+  final VoidCallback? onInstallSources;
 
   /// Installed + enabled providers bucketed by category (shared helper).
   SourceBuckets _buckets() => categorizedSources();
@@ -265,13 +301,21 @@ class SourceSwitcher extends StatelessWidget {
   /// labels + repo tags). Public so other screens (e.g. Settings → Active
   /// source) can present the exact same picker as the Home header.
   void showPicker(BuildContext context) {
-    final b = filterBucketsForMode(_buckets(), sl<ContentModeCubit>().state);
+    final mode = sl<ContentModeCubit>().state;
+    final b = filterBucketsForMode(_buckets(), mode);
 
     // The "All" tab is the tallest; size the sheet to it (so it's compact for a
     // few sources) but cap at 85% screen — TabBarView needs a bounded height.
+    // Anime mode sizes off anime/movies/nsfw exactly as before; a reading
+    // mode sizes off its own single bucket instead (anime/movies/nsfw are
+    // always empty there, so counting them in too would be harmless, but
+    // this keeps the "what's actually shown" intent explicit).
     final screenH = MediaQuery.of(context).size.height;
-    final headers = [b.anime, b.movies, b.nsfw].where((l) => l.isNotEmpty).length;
-    final total = b.anime.length + b.movies.length + b.nsfw.length;
+    final relevant = mode.isReading
+        ? [mode == ContentMode.manga ? b.manga : b.novel]
+        : [b.anime, b.movies, b.nsfw];
+    final headers = relevant.where((l) => l.isNotEmpty).length;
+    final total = relevant.fold(0, (sum, l) => sum + l.length);
     // Search only earns its space once there's a list worth filtering.
     final showSearch = total > 6;
     final searchH = showSearch ? 56 : 0;
@@ -291,6 +335,8 @@ class SourceSwitcher extends StatelessWidget {
         currentId: currentId,
         height: sheetH.toDouble(),
         showSearch: showSearch,
+        mode: mode,
+        onInstallSources: onInstallSources,
         onChoose: (id) {
           Navigator.of(ctx).pop();
           onChanged(id);
@@ -318,14 +364,18 @@ class _SourcePickerSheet extends StatefulWidget {
     required this.currentId,
     required this.height,
     required this.showSearch,
+    required this.mode,
     required this.onChoose,
+    this.onInstallSources,
   });
 
   final SourceBuckets buckets;
   final String currentId;
   final double height;
   final bool showSearch;
+  final ContentMode mode;
   final void Function(String id) onChoose;
+  final VoidCallback? onInstallSources;
 
   @override
   State<_SourcePickerSheet> createState() => _SourcePickerSheetState();
@@ -358,12 +408,27 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
         },
       );
 
-  Widget _empty(String message) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(message, style: AppText.body, textAlign: TextAlign.center),
-        ),
-      );
+  Widget _empty(String message) =>
+      EmptyState(icon: Icons.source_outlined, message: message);
+
+  /// Empty state for a reading mode with literally nothing installed — the
+  /// gap this task fixes. Only rendered from [_readingFlat]/[_grouped],
+  /// never from the anime-mode path, so anime mode can never show a button
+  /// here regardless of whether [onInstallSources] is wired.
+  Widget _installCta() {
+    final install = widget.onInstallSources;
+    return EmptyState(
+      icon: Icons.source_outlined,
+      message: 'No ${widget.mode.label} sources yet',
+      actionLabel: install == null ? null : 'Browse repositories',
+      onAction: install == null
+          ? null
+          : () {
+              Navigator.of(context).pop();
+              install();
+            },
+    );
+  }
 
   // A scrollable flat list for a single tab.
   Widget _flat(List<({String id, String label, String? repo})> all) {
@@ -383,9 +448,33 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
     );
   }
 
-  // The "All" tab: each (filtered) bucket under its own header.
+  // A reading mode's single-bucket tab (Manga or Novel) — same flat list as
+  // [_flat], but a genuinely-empty bucket (nothing installed, not just a
+  // search with no matches) gets the install CTA instead of plain text.
+  Widget _readingFlat(List<({String id, String label, String? repo})> all) {
+    final rows = _filter(all);
+    if (rows.isEmpty) {
+      if (all.isEmpty && _query.trim().isEmpty) return _installCta();
+      return _empty(_query.trim().isEmpty ? 'No sources here' : 'No matches');
+    }
+    final sorted = [
+      ...rows.where((s) => PinnedSources.isPinned(s.id)),
+      ...rows.where((s) => !PinnedSources.isPinned(s.id)),
+    ];
+    return ListView(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      children: [for (final s in sorted) _rowFor(s)],
+    );
+  }
+
+  // The "All" tab: each (filtered) bucket under its own header. Anime mode
+  // groups Anime/Movies & Series/NSFW exactly as before; a reading mode
+  // groups its own single bucket (Manga or Novel) instead — never any of
+  // anime/movies/nsfw, which are always empty there anyway.
   Widget _grouped() {
     final b = widget.buckets;
+    final mode = widget.mode;
     Widget header(String t) => Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
           child: Text(
@@ -393,51 +482,75 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
             style: AppText.overline.copyWith(color: AppColors.textTertiary),
           ),
         );
+    final categories = mode.isReading
+        ? [(title: mode.label, rows: mode == ContentMode.manga ? b.manga : b.novel)]
+        : [
+            (title: 'Anime', rows: b.anime),
+            (title: 'Movies & Series', rows: b.movies),
+            (title: 'NSFW', rows: b.nsfw),
+          ];
     // Pinned first (in pin order, from any bucket); drop them from the category
     // groups below so they aren't listed twice.
     final pinnedIds = PinnedSources.notifier.value;
-    final allRows = [...b.anime, ...b.movies, ...b.nsfw];
+    final allRows = [for (final c in categories) ...c.rows];
     final pinned = _filter([
       for (final id in pinnedIds) ...allRows.where((s) => s.id == id),
     ]);
     bool unpinned(({String id, String label, String? repo}) s) =>
         !pinnedIds.contains(s.id);
-    final anime = _filter(b.anime.where(unpinned).toList());
-    final movies = _filter(b.movies.where(unpinned).toList());
-    final nsfw = _filter(b.nsfw.where(unpinned).toList());
     final children = <Widget>[];
     if (pinned.isNotEmpty) {
       children.add(header('Pinned'));
       children.addAll(pinned.map(_rowFor));
     }
-    if (anime.isNotEmpty) {
-      children.add(header('Anime'));
-      children.addAll(anime.map(_rowFor));
-    }
-    if (movies.isNotEmpty) {
-      children.add(header('Movies & Series'));
-      children.addAll(movies.map(_rowFor));
-    }
-    if (nsfw.isNotEmpty) {
-      children.add(header('NSFW'));
-      children.addAll(nsfw.map(_rowFor));
+    for (final c in categories) {
+      final rows = _filter(c.rows.where(unpinned).toList());
+      if (rows.isNotEmpty) {
+        children.add(header(c.title));
+        children.addAll(rows.map(_rowFor));
+      }
     }
     if (children.isEmpty) {
+      if (mode.isReading && _query.trim().isEmpty) return _installCta();
       return _empty(_query.trim().isEmpty ? 'No enabled sources' : 'No matches');
     }
     return ListView(shrinkWrap: true, padding: EdgeInsets.zero, children: children);
   }
 
+  /// True if there's at least one source relevant to the current mode —
+  /// gates the "long-press to pin" nudge, which is nonsensical to show over
+  /// a genuinely empty sheet.
+  bool get _hasAnySources {
+    final b = widget.buckets;
+    if (widget.mode.isReading) {
+      return (widget.mode == ContentMode.manga ? b.manga : b.novel).isNotEmpty;
+    }
+    return b.anime.isNotEmpty || b.movies.isNotEmpty || b.nsfw.isNotEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     final b = widget.buckets;
-    // Tabs: All, Anime, Movies/Series, and NSFW only when there are NSFW
-    // sources to show (Privacy toggle on).
+    final mode = widget.mode;
+    // Tabs: anime mode keeps All/Anime/Movies/Series, and NSFW only when
+    // there are NSFW sources to show (Privacy toggle on) — unchanged from
+    // before. A reading mode shows All + its own single bucket (Manga or
+    // Novel) instead; it never had an Anime/Movies/NSFW tab to show and
+    // showing an empty one would be exactly the "three tabs of nothing"
+    // this replaces.
     final tabs = <({String title, Widget Function() body})>[
-      (title: 'All', body: _grouped),
-      (title: 'Anime', body: () => _flat(b.anime)),
-      (title: 'Movies/Series', body: () => _flat(b.movies)),
-      if (b.nsfw.isNotEmpty) (title: 'NSFW', body: () => _flat(b.nsfw)),
+      if (!mode.isReading) ...[
+        (title: 'All', body: _grouped),
+        (title: 'Anime', body: () => _flat(b.anime)),
+        (title: 'Movies/Series', body: () => _flat(b.movies)),
+        if (b.nsfw.isNotEmpty) (title: 'NSFW', body: () => _flat(b.nsfw)),
+      ] else ...[
+        (title: 'All', body: _grouped),
+        (
+          title: mode.label,
+          body: () => _readingFlat(mode == ContentMode.manga ? b.manga : b.novel),
+        ),
+      ],
     ];
 
     return SafeArea(
@@ -480,8 +593,9 @@ class _SourcePickerSheetState extends State<_SourcePickerSheet> {
               Expanded(
                 child: TabBarView(children: [for (final t in tabs) t.body()]),
               ),
-              // One-time nudge — hidden the moment the user pins anything.
-              if (PinnedSources.notifier.value.isEmpty)
+              // One-time nudge — hidden the moment the user pins anything,
+              // and whenever there's nothing to pin in the first place.
+              if (PinnedSources.notifier.value.isEmpty && _hasAnySources)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
                   child: Row(

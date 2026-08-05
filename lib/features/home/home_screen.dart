@@ -33,6 +33,7 @@ import '../notify/subscriptions_screen.dart';
 import '../reader/manga_reader_screen.dart';
 import '../reader/novel_reader_screen.dart';
 import '../sources/aniyomi_repo_tab.dart' show kAniyomiReposBoxName;
+import '../sources/zangetsu_sources_screen.dart';
 import '../update/update_dialog.dart';
 import 'continue_section.dart';
 import '../../core/ui/content_row.dart';
@@ -458,6 +459,11 @@ class _HomeViewState extends State<_HomeView> {
                 currentId: id,
                 onChanged: (newId) =>
                     context.read<ActiveSourceCubit>().setSource(newId),
+                onInstallSources: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ZangetsuSourcesScreen(openToRepos: true),
+                  ),
+                ),
               ),
             ),
           ],

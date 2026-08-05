@@ -58,6 +58,7 @@ import '../notify/subscriptions_screen.dart';
 import 'tracker_settings_screen.dart';
 import '../sources/source_health_screen.dart';
 import '../sources/sources_screen.dart';
+import '../sources/zangetsu_sources_screen.dart';
 import 'settings_screen_tv.dart';
 import 'cubit/settings_cubit.dart';
 
@@ -339,6 +340,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (mounted) setState(() {});
         }
       },
+      onInstallSources: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const ZangetsuSourcesScreen(openToRepos: true),
+        ),
+      ),
     ).showPicker(context);
   }
 

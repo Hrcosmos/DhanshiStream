@@ -25,7 +25,12 @@ import 'sources_search_field.dart';
 /// widget below is copied byte-identical from `sources_screen.dart` /
 /// `sources_screen_tv.dart` — only the host screen around them is new.
 class ZangetsuSourcesScreen extends StatelessWidget {
-  const ZangetsuSourcesScreen({super.key});
+  const ZangetsuSourcesScreen({super.key, this.openToRepos = false});
+
+  /// Opens straight to the Repositories tab (phone only — TV keeps its own
+  /// default) — used by the reading-mode source picker's install CTA, which
+  /// has nothing to show on Installed anyway.
+  final bool openToRepos;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +41,7 @@ class ZangetsuSourcesScreen extends StatelessWidget {
       ),
       child: sl<AppMode>().isTv
           ? const _ZTvView()
-          : const _ZPhoneView(),
+          : _ZPhoneView(openToRepos: openToRepos),
     );
   }
 }
@@ -46,7 +51,9 @@ class ZangetsuSourcesScreen extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ZPhoneView extends StatefulWidget {
-  const _ZPhoneView();
+  const _ZPhoneView({this.openToRepos = false});
+
+  final bool openToRepos;
 
   @override
   State<_ZPhoneView> createState() => _ZPhoneViewState();
@@ -75,6 +82,7 @@ class _ZPhoneViewState extends State<_ZPhoneView> {
       },
       child: DefaultTabController(
         length: 2,
+        initialIndex: widget.openToRepos ? 1 : 0,
         child: Scaffold(
           backgroundColor: AppColors.bg,
           appBar: AppBar(
