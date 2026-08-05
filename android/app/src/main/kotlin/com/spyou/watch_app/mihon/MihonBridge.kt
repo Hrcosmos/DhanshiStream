@@ -34,7 +34,11 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+
+/** logcat tag for everything on the page-image path. */
+private const val PAGE_LOG = "MihonPages"
 
 /**
  * Exposes Mihon manga-extension capabilities to the Flutter layer via a
@@ -419,7 +423,18 @@ private val imageRequestMethod: Method? by lazy(LazyThreadSafetyMode.PUBLICATION
         HttpSource::class.java
             .getDeclaredMethod("imageRequest", Page::class.java)
             .apply { isAccessible = true }
-    }.getOrNull()
+    }.getOrElse { err ->
+        // Losing this handle is silent and total: every page of every source
+        // downgrades to source-level headers, so sources that override
+        // imageRequest 403 on every page while sources that don't look fine.
+        // Nothing else in the app would ever say so — hence the loud log.
+        android.util.Log.e(
+            PAGE_LOG,
+            "imageRequest() lookup failed — ALL page image headers degraded to source defaults",
+            err,
+        )
+        null
+    }
 }
 
 /**
@@ -427,13 +442,25 @@ private val imageRequestMethod: Method? by lazy(LazyThreadSafetyMode.PUBLICATION
  * that could not be determined.
  *
  * Null happens when the reflective lookup failed, when the source's own
- * `imageRequest` threw, or — the common case — when [Page.imageUrl] is still
+ * `imageRequest` threw, or — the benign case — when [Page.imageUrl] is still
  * null after [ensureImageUrl], because the default body is
  * `GET(page.imageUrl!!, headers)`. Callers must fall back to source-level
  * headers.
  */
-internal fun imageRequestOf(src: HttpSource, page: Page): Request? =
-    runCatching { imageRequestMethod?.invoke(src, page) as? Request }.getOrNull()
+internal fun imageRequestOf(src: HttpSource, page: Page): Request? {
+    val method = imageRequestMethod ?: return null // already logged, once, at lookup
+    return runCatching { method.invoke(src, page) as? Request }.getOrElse { err ->
+        val cause = (err as? InvocationTargetException)?.targetException ?: err
+        // An unresolved page NPEs on the default body's `page.imageUrl!!`. That's
+        // expected and already reported to Dart as imageUrl:null — stay quiet.
+        // Anything else is the source's own override failing, which is worth saying.
+        val benign = cause is NullPointerException && page.imageUrl.isNullOrBlank()
+        if (!benign) {
+            android.util.Log.w(PAGE_LOG, "${src.name}: imageRequest() threw for page ${page.index}", cause)
+        }
+        null
+    }
+}
 
 /**
  * Guarantees [page] has a usable `imageUrl`, calling [resolve] **only** when it
@@ -479,6 +506,19 @@ internal fun pageDeliveryJson(http: HttpSource?, page: Page): JSONObject {
     }
     val request = imageRequestOf(http, page)
     if (request != null) {
+        // Upstream's own doc says an override may "send different headers or
+        // request method like POST" (HttpSource.kt:413-417). A body isn't
+        // expressible as url+headers and byte-proxying is out (Decision 2), so we
+        // can't honour it — but Dart will GET it and get a 405/403/blank page, so
+        // at least make that findable in logcat instead of on-device guesswork.
+        // ponytail: detect, don't support — revisit only if a real source needs POST.
+        if (request.method != "GET") {
+            android.util.Log.w(
+                PAGE_LOG,
+                "${http.name}: imageRequest() is ${request.method}, not GET — " +
+                    "only url+headers are sent, so Dart will GET page ${page.index}",
+            )
+        }
         json.put("imageUrl", request.url.toString())
         json.put("headers", MihonJson.headersToJsonObject(request.headers))
     } else {

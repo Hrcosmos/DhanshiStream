@@ -3,9 +3,11 @@ package com.spyou.watch_app.mihon
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.runBlocking
+import okhttp3.Headers
 import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -123,9 +125,99 @@ class MihonBridgeTest {
         )
     }
 
+    /**
+     * The one that actually guards the runtime path.
+     *
+     * The signature test above re-derives its own lookup and never calls
+     * [imageRequestOf], so it proves the vendored method exists — not that our
+     * reflection reaches it. This one drives the real code against a source that
+     * overrides `imageRequest`, and fails if the handle is ever null (e.g. a
+     * typo'd method name), which is otherwise a completely silent degradation.
+     */
+    @Test
+    fun imageRequestOf_dispatches_to_the_sources_own_override() {
+        val page = Page(index = 7, url = "/p/7", imageUrl = "https://cdn.test/plain/7.jpg")
+
+        val request = imageRequestOf(OverridingSource(), page)
+
+        assertNotNull("reflection must reach the source's imageRequest", request)
+        assertEquals(
+            "must be the OVERRIDE's url, not page.imageUrl",
+            "https://cdn.test/override/7.jpg",
+            request!!.url.toString(),
+        )
+        assertEquals(
+            "the override's per-source Referer is the whole point of RISK #1",
+            "https://example.test/reader",
+            request.header("Referer"),
+        )
+    }
+
+    @Test
+    fun pageDeliveryJson_emits_the_overrides_url_and_headers() {
+        val page = Page(index = 7, url = "/p/7", imageUrl = "https://cdn.test/plain/7.jpg")
+
+        val json = pageDeliveryJson(OverridingSource(), page)
+
+        assertEquals("https://cdn.test/override/7.jpg", json.getString("imageUrl"))
+        assertEquals(
+            "https://example.test/reader",
+            json.getJSONObject("headers").getString("Referer"),
+        )
+    }
+
+    /**
+     * The benign branch: an unresolved page NPEs inside the *default*
+     * `imageRequest` body (`GET(page.imageUrl!!, headers)`). That is expected and
+     * must stay out of logcat, or every such page spams a warning.
+     *
+     * This test doubles as the assertion that it stays quiet: `android.util.Log`
+     * is not mocked on the JVM, so if the benign guard ever stops matching, the
+     * `Log.w` fires and this test dies on "Log not mocked".
+     */
+    @Test
+    fun imageRequestOf_returns_null_and_stays_quiet_for_an_unresolved_page() {
+        val page = Page(index = 0, url = "/p/0", imageUrl = null)
+
+        assertNull(imageRequestOf(PlainSource(), page))
+    }
+
+    /** [HttpSource] with no `imageRequest` override — exercises the default body. */
+    private class PlainSource : HttpSource() {
+        override val baseUrl = "https://plain.test"
+        override val name = "Plain"
+        override val lang = "en"
+        override val supportsLatest = false
+
+        override fun headersBuilder(): Headers.Builder =
+            Headers.Builder().add("User-Agent", "zangetsu-test")
+    }
+
+    /**
+     * Minimal real [HttpSource] that overrides `imageRequest` — the shape this
+     * whole mechanism exists for.
+     *
+     * No Robolectric and no Injekt needed: `HttpSource.network` is
+     * `by injectLazy()` so the constructor resolves nothing, and overriding
+     * [headersBuilder] avoids the default body's `network.defaultUserAgentProvider()`.
+     */
+    private class OverridingSource : HttpSource() {
+        override val baseUrl = "https://example.test"
+        override val name = "Overriding"
+        override val lang = "en"
+        override val supportsLatest = false
+
+        override fun headersBuilder(): Headers.Builder =
+            Headers.Builder().add("User-Agent", "zangetsu-test")
+
+        override fun imageRequest(page: Page): Request = Request.Builder()
+            .url("https://cdn.test/override/${page.index}.jpg")
+            .header("Referer", "$baseUrl/reader")
+            .build()
+    }
+
     // -------------------------------------------------------------------------
-    // pageDeliveryJson — non-HttpSource branch (the only branch reachable
-    // without a device; the HttpSource branch needs a loaded extension)
+    // pageDeliveryJson — non-HttpSource branch
     // -------------------------------------------------------------------------
 
     @Test
