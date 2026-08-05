@@ -5,6 +5,7 @@ import '../../core/ui/settings_widgets.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
+import '../../core/models/provider_info.dart';
 import '../../core/provider/cloudstream_provider.dart';
 import '../../core/provider/provider_manager.dart';
 import '../../core/provider/provider_registry.dart';
@@ -14,6 +15,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_back_button.dart';
 import '../../core/tv/tv_focusable.dart';
+import '../../core/ui/source_switcher.dart';
 import 'aniyomi_sources_screen.dart';
 import 'bloc/sources_state.dart';
 import 'cloudstream_sources_screen.dart';
@@ -115,6 +117,25 @@ class _HubPhoneView extends StatelessWidget {
     final activeIsAni = activeId.startsWith('ani:');
     final activeIsZangetsu = activeId.isNotEmpty && !activeIsCs && !activeIsAni;
 
+    // Manga/novel sources are also Zangetsu JS providers under the hood, but
+    // get their own hub entry (Task E3) so reading sources read as visibly
+    // separate from streaming. sourceTypeOf is the app's one ProviderType
+    // resolver (core/ui/source_switcher.dart) — reused rather than
+    // re-deriving a manga/novel check here.
+    bool isReadingType(ProviderType t) =>
+        t == ProviderType.manga || t == ProviderType.novel;
+    final readingEntries = sl<ProviderRegistry>()
+        .getAll()
+        .where((e) => isReadingType(sourceTypeOf(e.name)))
+        .toList();
+    final readingCount = readingEntries.length;
+    final readingUpdates = SourcesState(
+      installed: readingEntries,
+      repos: sl<ProviderReposRegistry>().getAll(),
+    ).updatableKeys.length;
+    final activeIsReading =
+        activeIsZangetsu && isReadingType(sourceTypeOf(activeId));
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: settingsAppBar('Providers'),
@@ -161,6 +182,16 @@ class _HubPhoneView extends StatelessWidget {
               onTap: () => open(const AniyomiSourcesScreen()),
             ),
           ],
+          const SizedBox(height: 12),
+          _EcoRow(
+            icon: Icons.auto_stories_rounded,
+            title: 'Manga & Novel',
+            desc: 'Zangetsu reading providers',
+            info: '$readingCount sources',
+            active: activeIsReading,
+            updateCount: readingUpdates,
+            onTap: () => open(const ZangetsuSourcesScreen()),
+          ),
         ],
       ),
     );

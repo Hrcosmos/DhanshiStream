@@ -56,6 +56,7 @@ import '../auth/auth_screens.dart';
 import '../onboarding/how_it_works.dart';
 import '../notify/subscriptions_screen.dart';
 import 'tracker_settings_screen.dart';
+import '../../core/models/provider_info.dart';
 import '../sources/source_health_screen.dart';
 import '../sources/sources_screen.dart';
 import '../sources/zangetsu_sources_screen.dart';
@@ -492,6 +493,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     if (sl<AppMode>().isTv) return const SettingsScreenTv();
     final enabledCount = _registry.getAll().where((e) => e.enabled).length;
+    // Manga/novel sources are Zangetsu JS providers too, but get their own
+    // Sources row (Task E3) so reading sources are reachable without going
+    // through the streaming-flavored "Providers" entry. sourceTypeOf is the
+    // app's one ProviderType resolver — reused rather than re-deriving this.
+    final readingCount = _registry.getAll().where((e) {
+      final t = sourceTypeOf(e.name);
+      return t == ProviderType.manga || t == ProviderType.novel;
+    }).length;
     final activeId = context.watch<ActiveSourceCubit>().state;
     final connectedCount = <Tracker>[
       sl<AniListService>(),
@@ -608,6 +617,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         keywords: 'providers sources extensions plugins cloudstream aniyomi repository',
         onTap: () async {
           await _push(const SourcesScreen());
+          if (mounted) setState(() {});
+        },
+      ),
+      _SettingsEntry(
+        section: 'Sources',
+        icon: Icons.auto_stories_rounded,
+        title: 'Manga & Novel',
+        subtitle: '$readingCount sources',
+        keywords: 'manga novel reading sources providers extensions zangetsu',
+        onTap: () async {
+          await _push(const ZangetsuSourcesScreen());
           if (mounted) setState(() {});
         },
       ),
