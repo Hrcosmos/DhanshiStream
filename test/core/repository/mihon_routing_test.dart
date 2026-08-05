@@ -14,6 +14,7 @@ import 'package:watch_app/core/models/home_section.dart';
 import 'package:watch_app/core/models/media_item.dart';
 import 'package:watch_app/core/models/provider_info.dart';
 import 'package:watch_app/core/playback/playback_prefs.dart';
+import 'package:watch_app/core/playback/source_health_store.dart';
 import 'package:watch_app/core/provider/cloudstream_provider.dart';
 import 'package:watch_app/core/provider/provider_manager.dart';
 import 'package:watch_app/core/repository/source_repository.dart';
@@ -421,6 +422,75 @@ void main() {
       final ani = AniyomiManager()..register(AniyomiProvider(info: _aniInfo()));
       final repo = _repoWith(ani: ani);
       expect(await repo.mihonFilters('ani:1'), isEmpty);
+    });
+  });
+
+  group('filters reach the Mihon provider', () {
+    test('searchStatus forwards filtersJson into the native search call', () async {
+      // The failure mode this pins is silent: without the mihon arm in
+      // _searchStatusUncached the call falls through to the 3-arg
+      // provider.search(), the selection is dropped, and the search still
+      // succeeds — so nothing surfaces until someone notices on device that
+      // filters do nothing. Asserting the `filters` ARGUMENT on the wire is
+      // what makes that regression fail here.
+      mockChannel((call) async {
+        if (call.method == 'search') {
+          return jsonEncode([
+            {'url': '/m1', 'title': 'Manga One'},
+          ]);
+        }
+        return null;
+      });
+      final mihon = MihonManager()..register(MihonProvider(info: _info(id: 7)));
+      final repo = _repoWith(mihon: mihon);
+
+      const selection = '[{"type":"select","state":2}]';
+      final res = await repo.searchStatus(
+        'dragon',
+        sourceId: 'mihon:7',
+        filtersJson: selection,
+      );
+
+      expect(log.single.method, 'search');
+      final args = log.single.arguments as Map;
+      expect(args['sourceId'], 7);
+      expect(args['query'], 'dragon');
+      expect(args['filters'], selection);
+      expect(res.outcome, SourceOutcome.ok);
+      expect(res.items, hasLength(1));
+    });
+
+    test('searchStatus without filtersJson sends no filters key', () async {
+      mockChannel((call) async => call.method == 'search' ? '[]' : null);
+      final mihon = MihonManager()..register(MihonProvider(info: _info(id: 7)));
+      final repo = _repoWith(mihon: mihon);
+
+      await repo.searchStatus('dragon', sourceId: 'mihon:7');
+
+      expect((log.single.arguments as Map).containsKey('filters'), isFalse);
+    });
+
+    test('mihonFilters returns the provider\'s parsed schema', () async {
+      // Covers the `p is MihonProvider ? p.getFilters()` arm, not just the
+      // non-Mihon early return.
+      mockChannel((call) async {
+        if (call.method == 'getFilterList') {
+          return jsonEncode([
+            {'type': 'header', 'name': 'Genres'},
+            {'type': 'checkbox', 'name': 'Action', 'state': true},
+          ]);
+        }
+        return null;
+      });
+      final mihon = MihonManager()..register(MihonProvider(info: _info(id: 7)));
+      final repo = _repoWith(mihon: mihon);
+
+      final filters = await repo.mihonFilters('mihon:7');
+
+      expect(log.single.method, 'getFilterList');
+      expect((log.single.arguments as Map)['sourceId'], 7);
+      expect(filters, hasLength(2));
+      expect(filters.map((f) => f.name), ['Genres', 'Action']);
     });
   });
 }

@@ -356,10 +356,12 @@ Future<void> initDependencies() async {
   // map that touches no channel, so registering it unconditionally means
   // `sl<MihonManager>()` can never throw and no caller needs an isRegistered
   // dance. The Android gate lives on the boot step instead (see below) — the
-  // only place that talks to the native `zangetsu/mihon` channel and the only
-  // place a MihonProvider is ever constructed. One check there covers
+  // only place BOOT constructs a MihonProvider. One check there covers
   // everything downstream: nothing loads, so nothing registers, so the source
   // picker lists nothing, and every `mihon:` data call fails to resolve.
+  // (MihonExtensionService.installFromRepo also constructs providers and is
+  // deliberately NOT gated — like the anime path, its native call throws first
+  // off-Android and its own try/catch degrades that to `[]`.)
   final mihonManager = MihonManager();
   sl.registerSingleton<MihonManager>(mihonManager);
 
