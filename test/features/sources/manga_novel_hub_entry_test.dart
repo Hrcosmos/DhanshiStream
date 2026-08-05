@@ -19,6 +19,7 @@ import 'package:watch_app/core/anilist/anilist_service.dart';
 import 'package:watch_app/core/app_mode.dart';
 import 'package:watch_app/core/appwrite/appwrite_service.dart';
 import 'package:watch_app/core/download/download_prefs.dart';
+import 'package:watch_app/core/mihon/mihon_manager.dart';
 import 'package:watch_app/core/playback/playback_prefs.dart';
 import 'package:watch_app/core/playback/search_prefs.dart';
 import 'package:watch_app/core/provider/cloudstream_provider.dart';
@@ -119,6 +120,7 @@ void main() {
         ..registerSingleton<ProviderReposRegistry>(_FakeReposRegistry())
         ..registerSingleton<CloudStreamManager>(CloudStreamManager())
         ..registerSingleton<AniyomiManager>(AniyomiManager())
+        ..registerSingleton<MihonManager>(MihonManager())
         ..registerSingleton<ActiveSourceCubit>(ActiveSourceCubit(fallback: ''));
     });
 

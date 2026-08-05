@@ -5,6 +5,7 @@ import '../../core/ui/settings_widgets.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
+import '../../core/mihon/mihon_manager.dart';
 import '../../core/models/provider_info.dart';
 import '../../core/provider/cloudstream_provider.dart';
 import '../../core/provider/provider_manager.dart';
@@ -19,6 +20,7 @@ import '../../core/ui/source_switcher.dart';
 import 'aniyomi_sources_screen.dart';
 import 'bloc/sources_state.dart';
 import 'cloudstream_sources_screen.dart';
+import 'mihon_sources_screen.dart';
 import 'zangetsu_sources_screen.dart';
 
 const Widget _kChevron = Icon(
@@ -79,6 +81,7 @@ class _HubPhoneView extends StatelessWidget {
       listenable: Listenable.merge([
         sl<CloudStreamManager>(),
         sl<AniyomiManager>(),
+        sl<MihonManager>(),
       ]),
       builder: (context, _) => _body(context),
     );
@@ -88,34 +91,44 @@ class _HubPhoneView extends StatelessWidget {
     final zangetsuCount = sl<ProviderRegistry>().getAll().length;
     final showCs = Platform.isAndroid;
     final showAniyomi = Platform.isAndroid;
+    // Mihon (manga extensions) boot-loads the same way Aniyomi does — the
+    // load step is Android-only (M7) — so the row is gated identically.
+    final showMihon = Platform.isAndroid;
 
     final csGroups = sl<CloudStreamManager>().repoGroups;
     final csInstalled = csGroups.fold<int>(0, (s, g) => s + g.sources.length);
     final csRepos = csGroups.length;
     final aniCount = sl<AniyomiManager>().all.length;
+    final mihonCount = sl<MihonManager>().all.length;
 
     // Read-only pending-update counts. Zangetsu reuses SourcesState's own
     // installed-vs-manifest comparison (same result the Zangetsu screen shows);
-    // CS/Aniyomi expose an aggregate updateCount. Nothing is fetched or mutated.
+    // CS/Aniyomi/Mihon expose an aggregate updateCount. Nothing is fetched or
+    // mutated.
     final zUpdates = SourcesState(
       installed: sl<ProviderRegistry>().getAll(),
       repos: sl<ProviderReposRegistry>().getAll(),
     ).updatableKeys.length;
     final csUpdates = showCs ? sl<CloudStreamManager>().updateCount : 0;
     final aniUpdates = showAniyomi ? sl<AniyomiManager>().updateCount : 0;
-    final totalUpdates = zUpdates + csUpdates + aniUpdates;
+    final mihonUpdates = showMihon ? sl<MihonManager>().updateCount : 0;
+    final totalUpdates = zUpdates + csUpdates + aniUpdates + mihonUpdates;
 
     final total =
         zangetsuCount +
         (showCs ? csInstalled : 0) +
-        (showAniyomi ? aniCount : 0);
-    final ecoCount = 1 + (showCs ? 1 : 0) + (showAniyomi ? 1 : 0);
+        (showAniyomi ? aniCount : 0) +
+        (showMihon ? mihonCount : 0);
+    final ecoCount =
+        1 + (showCs ? 1 : 0) + (showAniyomi ? 1 : 0) + (showMihon ? 1 : 0);
 
     final activeId = sl<ActiveSourceCubit>().state;
     final activeName = activeId.isEmpty ? 'None' : _activeSourceLabel(activeId);
     final activeIsCs = activeId.startsWith('cs:');
     final activeIsAni = activeId.startsWith('ani:');
-    final activeIsZangetsu = activeId.isNotEmpty && !activeIsCs && !activeIsAni;
+    final activeIsMihon = activeId.startsWith('mihon:');
+    final activeIsZangetsu =
+        activeId.isNotEmpty && !activeIsCs && !activeIsAni && !activeIsMihon;
 
     // Manga/novel sources are also Zangetsu JS providers under the hood, but
     // get their own hub entry (Task E3) so reading sources read as visibly
@@ -146,8 +159,8 @@ class _HubPhoneView extends StatelessWidget {
             total: total,
             // +1 for the always-shown Manga & Novel row — not a separate
             // ecosystem count (ecoCount itself is untouched, still just
-            // Zangetsu/CS/Aniyomi), just the header copy matching what's on
-            // screen.
+            // Zangetsu/CS/Aniyomi/Mihon), just the header copy matching
+            // what's on screen.
             ecoCount: ecoCount + 1,
             activeName: activeName,
             totalUpdates: totalUpdates,
@@ -191,6 +204,18 @@ class _HubPhoneView extends StatelessWidget {
               onTap: () => open(const AniyomiSourcesScreen()),
             ),
           ],
+          if (showMihon) ...[
+            const SizedBox(height: 12),
+            _EcoRow(
+              icon: Icons.menu_book_outlined,
+              title: 'Mihon',
+              desc: 'Mihon manga extensions',
+              info: '$mihonCount sources',
+              active: activeIsMihon,
+              updateCount: mihonUpdates,
+              onTap: () => open(const MihonSourcesScreen()),
+            ),
+          ],
           const SizedBox(height: 12),
           _EcoRow(
             icon: Icons.auto_stories_rounded,
@@ -216,6 +241,9 @@ String _activeSourceLabel(String id) {
   }
   if (id.startsWith('ani:')) {
     return sl<AniyomiManager>().get(id)?.displayName ?? id;
+  }
+  if (id.startsWith('mihon:')) {
+    return sl<MihonManager>().get(id)?.displayName ?? id;
   }
   final e = sl<ProviderRegistry>().entryFor(id);
   if (e == null) return id;
