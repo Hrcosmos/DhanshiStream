@@ -141,29 +141,40 @@ MediaDetail mediaDetailFromSManga(
 /// The source `url` (Mihon's opaque chapter key) is stored in [Episode.url]
 /// and passed back verbatim to getPages.
 ///
-/// `scanlator` has no destination field: [Episode] carries no scanlator/group
+/// `scanlator` has no *display* field: [Episode] carries no scanlator/group
 /// concept (it wasn't added for this task — see the report's self-review) and
-/// isn't touched here, per the constraint against editing shared models. It is
-/// read defensively below for parity with the other keys but intentionally
-/// discarded.
+/// isn't surfaced anywhere in the returned [Episode], per the constraint
+/// against editing shared models. It IS folded into [Episode.id] below,
+/// though — a scanlator-less id collides across scanlation groups (MangaDex
+/// and friends routinely have several groups release the same chapter
+/// number on one source), which would silently merge two distinct chapters'
+/// read progress under one id. Disambiguating the id is a `String` I build in
+/// this file, not a model change, so it doesn't trip the "no shared model
+/// edits" constraint the way adding a field to [Episode] would.
 ///
 /// Expected JSON keys (from `MihonJson.chapterToJson`):
 ///   url            — String  (opaque chapter key; passed to getPages)
 ///   name           — String  (chapter title, e.g. "Chapter 1")
 ///   chapter_number — double  (use -1.0 / negative to signal "unset")
 ///   date_upload    — int     (Unix millis; 0 = unset)
-///   scanlator      — String? (not surfaced — see above)
+///   scanlator      — String? (folded into id only — see above; not displayed)
 Episode episodeFromSChapter(Map<String, dynamic> j) {
   final url = (j['url'] as String?) ?? '';
   final rawNum = (j['chapter_number'] as num?)?.toDouble();
   // Mihon uses -1.0 as the "no chapter number" sentinel, same as Aniyomi.
   final chapterNum = (rawNum != null && rawNum >= 0) ? rawNum : null;
+  final scanlator = (j['scanlator'] as String?)?.trim();
 
   // Derive a stable id: prefer chapter-number key so reading-history survives
   // URL changes; fall back to the raw URL for specials / unordered chapters.
-  final id = chapterNum != null
-      ? 'ch-${chapterNum.toStringAsFixed(1)}'
-      : url;
+  final numberedId =
+      chapterNum != null ? 'ch-${chapterNum.toStringAsFixed(1)}' : null;
+  // Fold the scanlator in when present — otherwise two groups' releases of
+  // the same chapter number collide onto one id (see doc comment above). No
+  // scanlator → id is byte-identical to the pre-fix 'ch-<n>' form.
+  final id = (numberedId != null && scanlator != null && scanlator.isNotEmpty)
+      ? '$numberedId-$scanlator'
+      : (numberedId ?? url);
 
   String? dateStr;
   final dateUpload = (j['date_upload'] as num?)?.toInt();

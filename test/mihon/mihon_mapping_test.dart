@@ -244,6 +244,37 @@ void main() {
       });
       expect(whole.id, isNot(equals(half.id)));
     });
+
+    test('same chapter_number, different scanlator -> distinct ids (no collision)', () {
+      // MangaDex-style: two groups both release "Chapter 12" on the same
+      // source. Without folding scanlator into the id, these would collide
+      // and silently share read progress.
+      final groupA = episodeFromSChapter({
+        'url': 'https://source.test/ch/12-groupA',
+        'name': 'Chapter 12',
+        'chapter_number': 12.0,
+        'date_upload': 0,
+        'scanlator': 'Group A',
+      });
+      final groupB = episodeFromSChapter({
+        'url': 'https://source.test/ch/12-groupB',
+        'name': 'Chapter 12',
+        'chapter_number': 12.0,
+        'date_upload': 0,
+        'scanlator': 'Group B',
+      });
+      expect(groupA.id, isNot(equals(groupB.id)));
+    });
+
+    test('no scanlator -> id is byte-identical to the plain ch-<n> form', () {
+      final ep = episodeFromSChapter({
+        'url': 'https://source.test/ch/7',
+        'name': 'Chapter 7',
+        'chapter_number': 7.0,
+        'date_upload': 0,
+      });
+      expect(ep.id, 'ch-7.0');
+    });
   });
 
   // ── pageImageFromJson / pagesFromJson ──────────────────────────────────────
