@@ -147,8 +147,13 @@ class MihonRepo {
   ///
   /// Tries `index.json` then `index.min.json`, each one direct first and then
   /// through the GitHub-raw mirrors — raw.githubusercontent.com is blocked on
-  /// some devices (see `aniyomi_extension_service.dart`'s note). The first URL
-  /// that returns something parseable wins.
+  /// some devices (see `aniyomi_extension_service.dart`'s note).
+  ///
+  /// Only an *unreachable* URL (network error, 404, any non-2xx, empty body)
+  /// falls through to the next one, so `index.min.json` is reached exactly
+  /// when the repo never published an `index.json` — the case that fallback
+  /// exists for. An `index.json` that answers 2xx with something unparseable
+  /// throws instead: that's a schema change, and it must be seen.
   ///
   /// Unlike [AniyomiRepo.fetchIndex] this THROWS a [MihonRepoException] when
   /// nothing could be fetched or parsed, so the UI shows a failure instead of
@@ -173,12 +178,12 @@ class MihonRepo {
           continue;
         }
         if (body == null || body.trim().isEmpty) continue;
-        try {
-          return parseIndex(body, repoBaseUrl: base);
-        } on MihonRepoException catch (e) {
-          // Reachable but the wrong shape — keep trying the other file.
-          lastError = e;
-        }
+        // Reachable and non-empty: this IS the repo's index, so a parse
+        // failure is the answer and it propagates. Falling through to
+        // index.min.json here would hide the next schema change behind
+        // whatever legacy stub the repo still serves — which is exactly how
+        // the two "Outdated App" rows got shipped in the first place.
+        return parseIndex(body, repoBaseUrl: base);
       }
     }
 

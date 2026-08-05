@@ -210,7 +210,12 @@ void main() {
       expect(adapter.requested, ['$_base/index.json']);
     });
 
-    test('falls back to index.min.json when index.json is missing', () async {
+    // ── The legacy fallback exists for exactly one case, and these two tests
+    // pin its edges: absent index.json → use the old file; present but
+    // unparseable index.json → say so, don't quietly serve the old file.
+
+    test('falls back to the legacy index.min.json only when index.json 404s',
+        () async {
       final adapter = _RoutingAdapter({
         '$_base/index.min.json': _fixture('keiyoushi_index_min.json'),
       });
@@ -218,20 +223,51 @@ void main() {
 
       final entries = await MihonRepo.fetchIndex(_base);
       expect(entries, hasLength(2));
+      expect(entries.first.pkg, 'eu.kanade.tachiyomi.extension.all.keiyoushi');
       // index.json is tried first, direct then through every mirror, before
       // the legacy file gets a turn.
       expect(adapter.requested.first, '$_base/index.json');
       expect(adapter.requested, contains('$_base/index.min.json'));
     });
 
-    test('falls back when index.json is served in an unknown shape', () async {
+    test('a reachable but unparseable index.json raises instead of falling '
+        'back to the legacy stub', () async {
       final adapter = _RoutingAdapter({
+        // 200 OK, wrong shape — i.e. keiyoushi reshaped index.json again.
         '$_base/index.json': '{"totally":"different"}',
         '$_base/index.min.json': _fixture('keiyoushi_index_min.json'),
       });
       registerDio(adapter);
 
-      expect(await MihonRepo.fetchIndex(_base), hasLength(2));
+      await expectLater(
+        MihonRepo.fetchIndex(_base),
+        throwsA(
+          isA<MihonRepoException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('unrecognised repo index format'),
+          ),
+        ),
+      );
+      // Returning the 2 deprecation stubs here would look exactly like the
+      // bug this parser was written to fix, so the legacy file is never even
+      // requested — and no mirror of index.json is retried either.
+      expect(adapter.requested, ['$_base/index.json']);
+    });
+
+    test('an index.json that is not JSON at all also raises', () async {
+      registerDio(_RoutingAdapter({'$_base/index.json': '<html>blocked</html>'}));
+
+      await expectLater(
+        MihonRepo.fetchIndex(_base),
+        throwsA(
+          isA<MihonRepoException>().having(
+            (e) => e.toString(),
+            'message',
+            contains("isn't valid JSON"),
+          ),
+        ),
+      );
     });
 
     test('throws when no URL yields a usable index', () async {
