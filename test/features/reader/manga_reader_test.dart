@@ -15,6 +15,7 @@ import 'package:watch_app/core/models/media_item.dart';
 import 'package:watch_app/core/models/page_content.dart';
 import 'package:watch_app/core/models/provider_info.dart';
 import 'package:watch_app/core/models/video_source.dart';
+import 'package:watch_app/core/models/watch_status.dart';
 import 'package:watch_app/core/playback/playback_prefs.dart';
 import 'package:watch_app/core/privacy/incognito_mode.dart';
 import 'package:watch_app/core/provider/base_provider.dart';
@@ -27,6 +28,8 @@ import 'package:watch_app/core/reading/reader_prefs.dart';
 import 'package:watch_app/core/repository/source_repository.dart';
 import 'package:watch_app/core/state/active_source_cubit.dart';
 import 'package:watch_app/core/supabase/supabase_service.dart';
+import 'package:watch_app/core/tracker/tracker.dart';
+import 'package:watch_app/core/tracker/tracker_hub.dart';
 import 'package:watch_app/features/reader/manga_reader_screen.dart';
 
 // ── Pure-logic tests ────────────────────────────────────────────────────────
@@ -246,7 +249,121 @@ class _SpyReadHistory extends ReadHistory {
   }
 }
 
-Episode chapter(String id, String url) => Episode(id: id, title: id, url: url);
+Episode chapter(String id, String url, {double? number}) =>
+    Episode(id: id, title: id, url: url, number: number);
+
+/// Records every [Tracker.scrobble] call — no network, everything else is a
+/// no-op. Mirrors media_kind_test.dart's `_FakeTracker`.
+class _FakeTracker extends ChangeNotifier implements Tracker {
+  int scrobbleCalls = 0;
+  MediaKind? lastScrobbleKind;
+  int? lastScrobbleEpisode;
+  int? lastScrobbleMalId;
+
+  @override
+  String get displayName => 'Fake';
+  @override
+  bool get isConnected => true;
+  @override
+  String? get viewerName => 'someone';
+  @override
+  String? get viewerAvatar => null;
+  @override
+  bool get autoSync => true;
+  @override
+  set autoSync(bool value) {}
+
+  @override
+  Future<bool> connect() async => true;
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  Future<void> markWatching({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    MediaKind kind = MediaKind.anime,
+  }) async {}
+
+  @override
+  Future<void> scrobble({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    required int episode,
+    MediaKind kind = MediaKind.anime,
+  }) async {
+    scrobbleCalls++;
+    lastScrobbleKind = kind;
+    lastScrobbleEpisode = episode;
+    lastScrobbleMalId = malId;
+  }
+
+  @override
+  Future<void> setStatus({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    required WatchStatus status,
+    MediaKind kind = MediaKind.anime,
+  }) async {}
+
+  @override
+  Future<void> removeFromList({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    MediaKind kind = MediaKind.anime,
+  }) async {}
+
+  @override
+  Future<List<TrackerListItem>> fetchList() async => const [];
+
+  @override
+  Future<TrackerEntry?> fetchEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+    MediaKind kind = MediaKind.anime,
+  }) async => null;
+
+  @override
+  Future<void> updateEntry({
+    int? malId,
+    String? title,
+    int? tmdbId,
+    bool tmdbIsTv = false,
+    String? imdbId,
+    String? pinnedId,
+    WatchStatus? status,
+    double? score,
+    int? progress,
+    MediaKind kind = MediaKind.anime,
+  }) async {}
+
+  @override
+  Future<List<TrackerSearchResult>> searchEntries(
+    String query, {
+    MediaKind kind = MediaKind.anime,
+  }) async => const [];
+
+  @override
+  Map<String, dynamic>? exportSession() => null;
+  @override
+  Future<void> importSession(Map<String, dynamic> session) async {}
+}
 
 List<PageImage> pages(int count, {String prefix = 'https://example.com/p'}) =>
     List.generate(count, (i) => PageImage(url: '$prefix$i.jpg'));
@@ -502,6 +619,58 @@ void main() {
 
       await disposeHarness(tester);
     });
+
+    testWidgets(
+      'landing on the last page of a chapter scrobbles it exactly once, '
+      'with kind: manga',
+      (tester) async {
+        await tester.runAsync(() => sl<ReaderPrefs>().setDirection('ltr'));
+        final fake = _FakeTracker();
+        sl.registerSingleton<TrackerHub>(TrackerHub([fake]));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MangaReaderScreen(
+              sourceId: 'ani:m',
+              showId: 'm1',
+              showTitle: 'Some Manga',
+              cover: null,
+              chapters: [chapter('c1', 'u1', number: 2), chapter('c2', 'u2')],
+              startIndex: 0,
+              malId: 555,
+            ),
+          ),
+        );
+        await settle(tester);
+
+        final pv = tester.widget<PageView>(find.byType(PageView));
+        await tester.runAsync(() async {
+          pv.controller!.jumpToPage(2); // last page of a 3-page chapter
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await settle(tester);
+
+        expect(fake.scrobbleCalls, 1);
+        expect(fake.lastScrobbleKind, MediaKind.manga);
+        expect(fake.lastScrobbleEpisode, 2);
+        expect(fake.lastScrobbleMalId, 555);
+
+        // Committing a slider seek back to the same (still-finished) last
+        // page must not scrobble a second time.
+        await tester.tapAt(const Offset(400, 300)); // reveal chrome
+        await settle(tester);
+        final slider = tester.widget<Slider>(find.byType(Slider));
+        await tester.runAsync(() async {
+          slider.onChangeStart!(2);
+          slider.onChangeEnd!(2);
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await settle(tester);
+        expect(fake.scrobbleCalls, 1);
+
+        await disposeHarness(tester);
+      },
+    );
 
     testWidgets('flushes ReadHistory on chapter change and on dispose', (
       tester,

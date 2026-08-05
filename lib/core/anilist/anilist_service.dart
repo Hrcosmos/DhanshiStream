@@ -137,22 +137,21 @@ class AniListService extends ChangeNotifier implements Tracker {
   // ── Media resolution (MAL id, else title search) ────────────────────────────
 
   /// Resolve an AniList `(mediaId, total episodes/chapters)` from a MAL id
-  /// (cached). The id cache is shared across kinds — fine in practice since a
-  /// caller always knows whether the id it's passing is an anime or manga MAL
-  /// id, but a malId that collided between the two spaces would return a
-  /// stale cross-kind hit. Not observed; flagged for whoever wires manga UI.
+  /// (cached). The id cache is namespaced by [kind] — MAL's anime and manga
+  /// id spaces overlap, so a malId that collided between the two would
+  /// otherwise return a stale cross-kind hit.
   Future<({int id, int? total})?> _resolveByMal(
     int malId, [
     MediaKind kind = MediaKind.anime,
   ]) async {
-    final cached = _store.cachedMediaId(malId);
+    final cached = _store.cachedMediaId(malId, kind);
     if (cached != null) {
-      return (id: cached, total: _store.cachedEpisodes(cached));
+      return (id: cached, total: _store.cachedEpisodes(cached, kind));
     }
     final m = await _api.mediaByMalId(malId, kind: kind);
     if (m == null) return null;
-    await _store.cacheMediaId(malId, m.id);
-    if (m.episodes != null) await _store.cacheEpisodes(m.id, m.episodes!);
+    await _store.cacheMediaId(malId, m.id, kind);
+    if (m.episodes != null) await _store.cacheEpisodes(m.id, m.episodes!, kind);
     return (id: m.id, total: m.episodes);
   }
 
@@ -165,14 +164,14 @@ class AniListService extends ChangeNotifier implements Tracker {
   ]) async {
     final key = title.trim().toLowerCase();
     if (key.isEmpty) return null;
-    final cached = _store.cachedMediaIdByTitle(key);
+    final cached = _store.cachedMediaIdByTitle(key, kind);
     if (cached != null) {
-      return (id: cached, total: _store.cachedEpisodes(cached));
+      return (id: cached, total: _store.cachedEpisodes(cached, kind));
     }
     final m = await _api.mediaBySearch(title, kind: kind);
     if (m == null) return null;
-    await _store.cacheMediaIdByTitle(key, m.id);
-    if (m.episodes != null) await _store.cacheEpisodes(m.id, m.episodes!);
+    await _store.cacheMediaIdByTitle(key, m.id, kind);
+    if (m.episodes != null) await _store.cacheEpisodes(m.id, m.episodes!, kind);
     return (id: m.id, total: m.episodes);
   }
 
@@ -253,14 +252,22 @@ class AniListService extends ChangeNotifier implements Tracker {
     );
     if (ok) {
       await _store.setScrobbledProgress(mediaId, progress);
-      await _store.removePending(malId: malId, title: title);
+      await _store.removePending(malId: malId, title: title, kind: kind);
       return _Scrobble.synced;
     }
-    await _store.queueScrobble(malId: malId, title: title, episode: episode);
+    await _store.queueScrobble(
+      malId: malId,
+      title: title,
+      episode: episode,
+      kind: kind,
+    );
     return _Scrobble.failed;
   }
 
   /// Retry any queued scrobbles (called on launch + after connect). Silent.
+  /// Replays each row against ITS OWN [MediaKind] (a manga scrobble that
+  /// failed offline must replay as manga, not silently default to anime —
+  /// [mediaKindFromName] reads a pre-kind-field row as anime, same as before).
   Future<void> flushPending() async {
     if (!isConnected) return;
     for (final p in _store.pendingScrobbles) {
@@ -270,6 +277,7 @@ class AniListService extends ChangeNotifier implements Tracker {
         malId: p['malId'] as int?,
         title: p['title'] as String?,
         episode: episode,
+        kind: mediaKindFromName(p['kind'] as String?),
       );
       if (r == _Scrobble.failed) break; // still offline — retry next time
     }

@@ -379,28 +379,37 @@ class _DetailViewState extends State<_DetailView>
   }
 
   /// Whether the Tracking button should show for [detail]. Only when a tracker
-  /// is connected AND it can actually track this title: anime → always (AniList/
-  /// MAL/Simkl); movies & live-action TV → only Simkl, and only with a tmdb/imdb
-  /// id to key on. Keeps the button out of the way for everyone else.
+  /// is connected AND it can actually track this title: anime/manga/novel →
+  /// always (AniList/MAL resolve by malId or title regardless); movies &
+  /// live-action TV → only Simkl, and only with a tmdb/imdb id to key on.
+  /// Keeps the button out of the way for everyone else.
   bool _trackingAvailable(MediaDetail detail) {
     final hub = sl<TrackerHub>();
     if (!hub.anyConnected) return false;
-    if (detail.type == ProviderType.anime) return true;
+    if (detail.type == ProviderType.anime ||
+        detail.type == ProviderType.manga ||
+        detail.type == ProviderType.novel) {
+      return true;
+    }
     final simklOn = hub.connected.any((t) => t.displayName == 'Simkl');
     final hasId = (detail.tmdbId ?? widget.item.tmdbId) != null ||
         ((detail.imdbId ?? widget.item.imdbId)?.isNotEmpty ?? false);
     return simklOn && hasId;
   }
 
-  /// Open the tracker sync sheet — status, score and episode
+  /// Open the tracker sync sheet — status, score and episode/chapter
   /// progress in one place, applied to every connected tracker at once. Anime
-  /// resolves by MAL id or title; movies/TV via Simkl's tmdb/imdb id. The sheet
-  /// returns the applied episode progress so grey-out can update immediately.
+  /// resolves by MAL id or title; movies/TV via Simkl's tmdb/imdb id; manga/
+  /// novel resolves by malId or title too (AniList/MAL manga lists). The
+  /// sheet returns the applied progress so grey-out can update immediately.
   Future<void> _openTrackingSheet(MediaDetail detail) async {
+    final reading = detail.type == ProviderType.manga ||
+        detail.type == ProviderType.novel;
     final applied = await showTrackerSyncSheet(
       context,
       title: detail.title,
       isAnime: detail.type == ProviderType.anime,
+      reading: reading,
       malId: detail.malId ?? widget.item.malId,
       tmdbId: detail.tmdbId ?? widget.item.tmdbId,
       tmdbIsTv: detail.tmdbIsTv,
@@ -650,6 +659,7 @@ class _DetailViewState extends State<_DetailView>
               cover: detail.cover ?? widget.item.cover,
               chapters: chapters,
               startIndex: index,
+              malId: detail.malId ?? widget.item.malId,
             ),
           ),
         );
@@ -664,6 +674,7 @@ class _DetailViewState extends State<_DetailView>
               cover: detail.cover ?? widget.item.cover,
               chapters: chapters,
               startIndex: index,
+              malId: detail.malId ?? widget.item.malId,
             ),
           ),
         );

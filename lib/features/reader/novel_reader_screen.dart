@@ -9,6 +9,8 @@ import '../../core/reading/reader_prefs.dart';
 import '../../core/repository/source_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
+import '../../core/tracker/tracker.dart';
+import '../../core/tracker/tracker_hub.dart';
 
 /// Text reader for manga/novel chapters — the reading counterpart of the
 /// video player. Phone-only (no TV twin, no TV focus handling needed).
@@ -23,6 +25,7 @@ class NovelReaderScreen extends StatefulWidget {
     required this.cover,
     required this.chapters, // sorted ascending
     required this.startIndex,
+    this.malId,
   });
 
   final String sourceId;
@@ -31,6 +34,10 @@ class NovelReaderScreen extends StatefulWidget {
   final String? cover;
   final List<Episode> chapters;
   final int startIndex;
+
+  /// MAL id, when known — identifies the title for tracker chapter scrobble
+  /// (AniList/MAL manga list). Falls back to [showTitle] when null/unmatched.
+  final int? malId;
 
   @override
   State<NovelReaderScreen> createState() => _NovelReaderScreenState();
@@ -46,6 +53,11 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
   bool _chromeVisible = false;
   bool _atEnd = false;
   int _lastScrollSaveMs = 0;
+
+  // Chapter ids already scrobbled this session — dedupes a repeated
+  // "finished" save (throttled scroll ticks + the flush on chapter
+  // change/dispose can all observe the same finished chapter).
+  final Set<String> _scrobbled = {};
 
   @override
   void initState() {
@@ -164,6 +176,27 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
         updatedMs: DateTime.now().millisecondsSinceEpoch,
       ),
       flush: flush,
+    );
+    if (sl<ReadStore>().finished(widget.sourceId, widget.showId, ep.id)) {
+      _maybeScrobble(ep);
+    }
+  }
+
+  /// Chapter scrobble on completion — mirrors player_controller.dart's
+  /// _maybeScrobble guard structure exactly (TrackerHub registration check,
+  /// a dedupe set, then TrackerHub.scrobble). TrackerHub already gates
+  /// incognito internally, so no extra check belongs here.
+  void _maybeScrobble(Episode ep) {
+    if (_scrobbled.contains(ep.id)) return;
+    final n = ep.number;
+    if (n == null || n <= 0 || n != n.truncateToDouble()) return;
+    if (!sl.isRegistered<TrackerHub>()) return;
+    _scrobbled.add(ep.id);
+    sl<TrackerHub>().scrobble(
+      malId: widget.malId,
+      title: widget.showTitle,
+      episode: n.toInt(),
+      kind: MediaKind.manga,
     );
   }
 

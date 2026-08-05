@@ -67,6 +67,19 @@ String labelFor(WatchStatus s, {required bool reading}) {
   };
 }
 
+/// [WatchStatusX.mal], but reading-aware: MyAnimeList's manga list uses
+/// `reading`/`plan_to_read` instead of `watching`/`plan_to_watch` —
+/// `completed`/`on_hold`/`dropped` are shared. Mirrors [labelFor]'s pattern;
+/// `reading: false` is byte-identical to [WatchStatusX.mal].
+String malStatusFor(WatchStatus s, {required bool reading}) {
+  if (!reading) return s.mal;
+  return switch (s) {
+    WatchStatus.watching => 'reading',
+    WatchStatus.planning => 'plan_to_read',
+    WatchStatus.completed || WatchStatus.paused || WatchStatus.dropped => s.mal,
+  };
+}
+
 /// Parse a stored status name (null/unknown → null).
 WatchStatus? watchStatusFromName(String? name) {
   if (name == null) return null;

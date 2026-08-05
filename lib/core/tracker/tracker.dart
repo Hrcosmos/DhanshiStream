@@ -9,6 +9,13 @@ import '../models/watch_status.dart';
 /// separate novel list to target), so a third value here would be a lie.
 enum MediaKind { anime, manga }
 
+/// Parse a persisted [MediaKind] name (e.g. from a Hive-stored queue entry).
+/// Null/unknown → [MediaKind.anime] — the same default every kind-aware
+/// method in this file already has, and what every entry written before this
+/// parameter existed implicitly meant.
+MediaKind mediaKindFromName(String? name) =>
+    name == MediaKind.manga.name ? MediaKind.manga : MediaKind.anime;
+
 /// One entry of the user's library read back from a tracker (AniList/MAL/Simkl).
 /// [item] is a METADATA STUB — title/cover/ids only, with `url`/`sourceId` empty
 /// (no provider is attached; a playable source is resolved by title on tap).
