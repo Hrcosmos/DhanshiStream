@@ -128,6 +128,10 @@ ProviderType sourceTypeOf(String id) {
     final p = sl<CloudStreamManager>().get(id);
     return p is CloudStreamProvider ? p.providerType : ProviderType.anime;
   }
+  // ponytail: hardcoded to anime — wrong by construction the day manga
+  // reuses the Aniyomi extension machinery (a real, planned direction; see
+  // watch-app-manga-novel-support). Fix then: read the loaded extension's
+  // own declared type instead of assuming video-only.
   if (id.startsWith('ani:')) return ProviderType.anime; // Aniyomi is video-only
   final t = sl<ProviderRegistry>().typeOf(id);
   if (t == null) return ProviderType.anime;
