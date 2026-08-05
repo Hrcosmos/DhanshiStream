@@ -21,9 +21,19 @@ String malRoot(MediaKind kind) => kind == MediaKind.manga ? 'manga' : 'anime';
 String malTotalField(MediaKind kind) =>
     kind == MediaKind.manga ? 'num_chapters' : 'num_episodes';
 
-/// MAL's `my_list_status` progress-write/-read field for [kind].
+/// MAL's `my_list_status` progress WRITE field for [kind] (the PATCH body
+/// key). For manga this is also the read name; for anime it is NOT — MAL's
+/// anime API is asymmetric (see [malProgressReadField]).
 String malProgressField(MediaKind kind) =>
     kind == MediaKind.manga ? 'num_chapters_read' : 'num_watched_episodes';
+
+/// MAL's `my_list_status` progress READ field for [kind] (the field name in
+/// a GET response). Manga shares the write name (`num_chapters_read`); anime
+/// does NOT — the response uses `num_episodes_watched`, not
+/// `num_watched_episodes`. Collapsing these into one builder is exactly the
+/// bug that regressed anime progress reads.
+String malProgressReadField(MediaKind kind) =>
+    kind == MediaKind.manga ? 'num_chapters_read' : 'num_episodes_watched';
 
 /// Path (relative to `_api`) for the title-search a resolver hits
 /// (`_resolve`/`_resolveManga`). Pure + exposed so a test can pin the anime
@@ -225,8 +235,9 @@ class MalService extends ChangeNotifier implements Tracker {
           validateStatus: (s) => s != null && s < 500,
         ),
       );
-      if (await _storeToken(res.data))
+      if (await _storeToken(res.data)) {
         return _box.get('accessToken') as String?;
+      }
     } catch (_) {}
     return null;
   }
@@ -277,8 +288,9 @@ class MalService extends ChangeNotifier implements Tracker {
     if (title == null || title.trim().isEmpty) return null;
     final key = title.trim().toLowerCase();
     final cached = (_box.get('title2mal') as Map?)?[key];
-    if (cached is int)
+    if (cached is int) {
       return (id: cached, total: await _totalEpisodes(cached, token));
+    }
     try {
       final res = await _dio.get<dynamic>(
         '$_api/anime?q=${Uri.encodeComponent(title)}&limit=1&fields=num_episodes',
@@ -497,8 +509,9 @@ class MalService extends ChangeNotifier implements Tracker {
     if (!isConnected || !autoSync || episode <= 0) return;
     final a = await _resolveFor(kind, malId, title);
     if (a == null) return;
-    if (episode <= _scrobbled(a.id, kind))
+    if (episode <= _scrobbled(a.id, kind)) {
       return; // never go backwards / repeat
+    }
     var ep = episode;
     if (a.total != null && a.total! > 0 && ep > a.total!) ep = a.total!;
     final status = (a.total != null && a.total! > 0 && ep >= a.total!)
@@ -675,7 +688,7 @@ class MalService extends ChangeNotifier implements Tracker {
         onList: ls != null,
         status: _statusFromMal(ls?['status'] as String?),
         score: (score == null || score == 0) ? null : score,
-        progress: (ls?[malProgressField(kind)] as num?)?.toInt(),
+        progress: (ls?[malProgressReadField(kind)] as num?)?.toInt(),
         maxEpisodes: reading ? null : totalOrNull,
         chapters: reading ? totalOrNull : null,
       );

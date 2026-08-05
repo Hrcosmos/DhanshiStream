@@ -39,6 +39,7 @@ import '../../core/privacy/incognito_mode.dart';
 import '../../core/playback/my_list.dart';
 import '../../core/ui/list_status_sheet.dart';
 import '../../core/ui/tracker_sync_sheet.dart';
+import '../../core/tracker/tracker.dart';
 import '../../core/tracker/tracker_binding_store.dart';
 import '../../core/tracker/tracker_hub.dart';
 import '../../core/playback/playback_prefs.dart';
@@ -360,16 +361,19 @@ class _DetailViewState extends State<_DetailView>
     final hub = sl<TrackerHub>();
     if (!hub.anyConnected) return;
     final isAnime = detail.type == ProviderType.anime;
+    final reading =
+        detail.type == ProviderType.manga || detail.type == ProviderType.novel;
     final pins = sl<TrackerBindingStore>()
         .get(TrackerBindingStore.keyOf(widget.item.sourceId, widget.item.url));
     hub
         .fetchEntry(
           malId: detail.malId ?? widget.item.malId,
-          title: isAnime ? detail.title : null,
+          title: (isAnime || reading) ? detail.title : null,
           tmdbId: detail.tmdbId ?? widget.item.tmdbId,
           tmdbIsTv: detail.tmdbIsTv,
           imdbId: detail.imdbId ?? widget.item.imdbId,
           pinnedIds: pins.isEmpty ? null : pins,
+          kind: reading ? MediaKind.manga : MediaKind.anime,
         )
         .then((e) {
       final p = e?.progress;

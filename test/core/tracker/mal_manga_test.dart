@@ -48,9 +48,32 @@ void main() {
       expect(malListStatusPath(MediaKind.anime, 21), _listStatusAnimeGolden);
     });
 
-    test('malProgressField is num_watched_episodes', () {
-      expect(malProgressField(MediaKind.anime), 'num_watched_episodes');
-    });
+    test(
+      'malProgressField (WRITE / PATCH body key) is num_watched_episodes',
+      () {
+        expect(malProgressField(MediaKind.anime), 'num_watched_episodes');
+      },
+    );
+
+    // Round-1 review regression: MAL's anime API is asymmetric — the PATCH
+    // body key is `num_watched_episodes` but the `my_list_status` GET
+    // response uses `num_episodes_watched`. Collapsing these into one
+    // builder made fetchEntry().progress permanently null for anime (and,
+    // worse, let a stray "+1" tap PATCH progress:1 over a real count). This
+    // pin fails the moment the two builders return the same string for
+    // anime — see the round-1 fix report for the before/after run proving
+    // it catches exactly that collapse.
+    test(
+      'malProgressReadField (my_list_status GET field) is '
+      'num_episodes_watched — asymmetric from the write field for anime',
+      () {
+        expect(malProgressReadField(MediaKind.anime), 'num_episodes_watched');
+        expect(
+          malProgressReadField(MediaKind.anime),
+          isNot(malProgressField(MediaKind.anime)),
+        );
+      },
+    );
 
     test(
       'malStatusFor(reading: false) is byte-identical to WatchStatusX.mal',
@@ -95,6 +118,18 @@ void main() {
     test('malProgressField is num_chapters_read', () {
       expect(malProgressField(MediaKind.manga), 'num_chapters_read');
     });
+
+    test(
+      'malProgressReadField equals the write field for manga '
+      '(num_chapters_read is both the read and write name)',
+      () {
+        expect(malProgressReadField(MediaKind.manga), 'num_chapters_read');
+        expect(
+          malProgressReadField(MediaKind.manga),
+          malProgressField(MediaKind.manga),
+        );
+      },
+    );
 
     test(
       'malStatusFor(reading: true): watching→reading, planning→plan_to_read',
