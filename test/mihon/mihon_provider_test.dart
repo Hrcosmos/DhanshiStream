@@ -76,10 +76,13 @@ void main() {
   });
 
   group('getEpisodes → native getChapters (the M6 trap)', () {
-    test('invokes "getChapters", never "getEpisodes", with sourceId/url',
-        () async {
+    test(
+        'invokes "getChapters", never "getEpisodes", with sourceId/url, and '
+        'normalises the newest-first reply to chronological order', () async {
       install((call) async {
         if (call.method == 'getChapters') {
+          // Source replies newest-first (the real Tachiyomi/Mihon convention)
+          // — chapter 1100 before chapter 1099.
           return jsonEncode([
             {
               'url': '/manga/one-piece/c1100',
@@ -87,6 +90,11 @@ void main() {
               'chapter_number': 1100.0,
               'date_upload': 1700000000000,
               'scanlator': 'TCB',
+            },
+            {
+              'url': '/manga/one-piece/c1099',
+              'name': 'Chapter 1099',
+              'chapter_number': 1099.0,
             },
           ]);
         }
@@ -102,20 +110,25 @@ void main() {
       expect(args['sourceId'], 7);
       expect(args['url'], '/manga/one-piece');
 
-      expect(chapters, hasLength(1));
-      expect(chapters.single.title, 'Chapter 1100');
-      expect(chapters.single.number, 1100.0);
-      expect(chapters.single.url, '/manga/one-piece/c1100');
+      // sortChaptersAscending must have run: chronological (1099 then 1100),
+      // not the wire order (1100 then 1099) the fixture above sent.
+      expect(chapters, hasLength(2));
+      expect(chapters[0].number, 1099.0);
+      expect(chapters[0].title, 'Chapter 1099');
+      expect(chapters[1].number, 1100.0);
+      expect(chapters[1].title, 'Chapter 1100');
+      expect(chapters[1].url, '/manga/one-piece/c1100');
       // scanlator is folded into the id (mihon_mapping.dart), not displayed.
-      expect(chapters.single.id, 'ch-1100.0-TCB');
+      expect(chapters[1].id, 'ch-1100.0-TCB');
     });
 
     test('a channel call to the wrong method name would leave chapters empty',
         () async {
       // Regression guard: if getEpisodes ever called "getEpisodes" on the
       // channel instead of "getChapters", this mock (which only answers
-      // getChapters) would return null and the list would come back empty —
-      // proving the assertion above is load-bearing, not incidental.
+      // getChapters) would return null and the list would come back empty.
+      // isEmpty alone wouldn't catch a renamed call (null decodes to []
+      // either way) — it's the method-name assertion below that's load-bearing.
       install((call) async => call.method == 'getChapters' ? '[]' : null);
       final p = MihonProvider(info: srcInfo());
       final chapters = await p.getEpisodes('/x');
