@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../aniyomi/aniyomi_provider.dart';
 import '../di/injector.dart';
+import '../mihon/mihon_manager.dart';
 import '../mode/content_mode.dart';
 import '../mode/content_mode_cubit.dart';
 import '../playback/pinned_sources.dart';
@@ -141,6 +142,26 @@ SourceBuckets categorizedSources() {
     if (!aniyomiNsfwVisible(p, showNsfwAniyomi: showNsfwAni)) continue;
     anime.add((id: p.sourceId, label: 'Ani · ${p.displayName}', repo: 'Aniyomi'));
   }
+  // Mihon providers — always manga; keyed by their `mihon:` sourceId. Only the
+  // manga bucket, never anime/movies/nsfw, so TvSourcePicker (which reads
+  // anime/movies/nsfw and has no mode filter) renders exactly as before.
+  //
+  // isRegistered-guarded because MihonManager is a newer singleton than this
+  // function's other dependencies: plenty of existing tests build a GetIt with
+  // ProviderRegistry + PlaybackPrefs + CloudStreamManager + AniyomiManager and
+  // nothing else, and an unguarded lookup would turn every one of them into a
+  // GetIt "not registered" crash. NSFW reuses the general `nsfwSources` toggle
+  // (there is no Mihon-specific pref), matching SourceRepository.loadedSources.
+  if (sl.isRegistered<MihonManager>()) {
+    for (final p in sl<MihonManager>().all) {
+      if (p.info.nsfw && !nsfwEnabled) continue;
+      manga.add((
+        id: p.sourceId,
+        label: 'Mihon · ${p.displayName}',
+        repo: 'Mihon',
+      ));
+    }
+  }
 
   anime.sort(byRowLabel);
   movies.sort(byRowLabel);
@@ -159,6 +180,12 @@ ProviderType sourceTypeOf(String id) {
     final p = sl<CloudStreamManager>().get(id);
     return p is CloudStreamProvider ? p.providerType : ProviderType.anime;
   }
+  // Mihon manga extensions. They carry their own `mihon:` prefix precisely so
+  // this resolver can type them as manga WITHOUT disturbing the `ani:` line
+  // below (spec Decision 1) — reusing `ani:` would have typed every manga
+  // source as anime. No GetIt lookup needed: the prefix alone is authoritative,
+  // since a Mihon source is manga-only by construction.
+  if (id.startsWith('mihon:')) return ProviderType.manga;
   // ponytail: hardcoded to anime — wrong by construction the day manga
   // reuses the Aniyomi extension machinery (a real, planned direction; see
   // watch-app-manga-novel-support). Fix then: read the loaded extension's
@@ -178,6 +205,11 @@ ProviderType _typeOfFromMap(String id, Map<String, String> typeMap) {
     final p = sl<CloudStreamManager>().get(id);
     return p is CloudStreamProvider ? p.providerType : ProviderType.anime;
   }
+  // Must stay in lockstep with [sourceTypeOf]'s branch — this twin is what
+  // filterBucketsForMode uses, so without it a `mihon:` row would resolve to
+  // anime here and get filtered straight out of the manga bucket it was just
+  // put in.
+  if (id.startsWith('mihon:')) return ProviderType.manga;
   if (id.startsWith('ani:')) return ProviderType.anime; // Aniyomi is video-only
   final t = typeMap[id];
   if (t == null) return ProviderType.anime;
@@ -256,6 +288,7 @@ class SourceSwitcher extends StatelessWidget {
   // Zangetsu coral).
   static const Color _csColor = Color(0xFF7EA2FF);
   static const Color _aniColor = Color(0xFFBB8CFF);
+  static const Color _mihonColor = Color(0xFF6FD8A8);
 
   /// Short colored ecosystem tag + source name for the chip. The tag replaces
   /// the old "CS · " name prefix: still text (a colored dot alone was too
@@ -274,6 +307,18 @@ class SourceSwitcher extends StatelessWidget {
       return (
         'ANI',
         _aniColor,
+        (name != null && name.isNotEmpty) ? name : currentId,
+      );
+    }
+    // Without this a `mihon:` active source falls through to the ZAN branch,
+    // finds no ProviderRegistry entry, and the chip renders the raw id.
+    if (currentId.startsWith('mihon:')) {
+      final name = sl.isRegistered<MihonManager>()
+          ? sl<MihonManager>().get(currentId)?.displayName
+          : null;
+      return (
+        'MIHON',
+        _mihonColor,
         (name != null && name.isNotEmpty) ? name : currentId,
       );
     }

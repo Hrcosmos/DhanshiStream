@@ -71,6 +71,9 @@ import '../notify/subscription_checker.dart';
 import '../discord/discord_rpc.dart';
 import '../aniyomi/aniyomi_extension_service.dart';
 import '../aniyomi/aniyomi_provider.dart';
+import '../mihon/mihon_extension_service.dart';
+import '../mihon/mihon_manager.dart';
+import '../mihon/mihon_provider.dart';
 import '../../features/auth/auth_cubit.dart';
 import '../../features/auth/migration_bridge.dart';
 import '../../features/auth/tv_pairing_service.dart';
@@ -346,6 +349,20 @@ Future<void> initDependencies() async {
   final aniyomiManager = AniyomiManager();
   sl.registerSingleton<AniyomiManager>(aniyomiManager);
 
+  // Mihon manga-extension registry — the manga twin of AniyomiManager above,
+  // populated by the guarded boot step further down.
+  //
+  // The singleton itself is registered on EVERY platform: it's an in-memory
+  // map that touches no channel, so registering it unconditionally means
+  // `sl<MihonManager>()` can never throw and no caller needs an isRegistered
+  // dance. The Android gate lives on the boot step instead (see below) — the
+  // only place that talks to the native `zangetsu/mihon` channel and the only
+  // place a MihonProvider is ever constructed. One check there covers
+  // everything downstream: nothing loads, so nothing registers, so the source
+  // picker lists nothing, and every `mihon:` data call fails to resolve.
+  final mihonManager = MihonManager();
+  sl.registerSingleton<MihonManager>(mihonManager);
+
   // --- Provider registry data layer ---------------------------------
   await ProviderReposRegistry.init();
   await ProviderRegistry.init();
@@ -466,6 +483,63 @@ Future<void> initDependencies() async {
     }
   });
 
+  // Guarded Mihon boot step — the manga twin of the Aniyomi step above.
+  // Same shape: its own microtask so it never blocks startup, and a try/catch
+  // so any failure is logged and never propagates.
+  //
+  // Two things this step is load-bearing for beyond reloading extensions:
+  //
+  //  1. It OPENS the `mihon_installed` box. MihonExtensionService.installFromRepo
+  //     only persists `pkg -> apkPath` when that box is open, so without this
+  //     an install would "succeed" and then silently vanish on the next launch
+  //     — no error anywhere. The box is opened BEFORE the isEmpty early-return
+  //     so a first-ever install still has somewhere to write.
+  //  2. It is the single Platform.isAndroid gate for the whole Mihon stack.
+  //     MihonProvider deliberately carries no in-provider guards (the anime
+  //     twin's are dead code — a missing channel already degrades to empty),
+  //     so the check lives here, where it covers boot-reload, the source
+  //     picker's listing, and every data call in one place: on iOS nothing is
+  //     ever loaded, so no MihonProvider is ever constructed.
+  Future.microtask(() async {
+    if (!Platform.isAndroid) return; // Mihon extensions are Android-only (DEX)
+    try {
+      if (!Hive.isBoxOpen(MihonExtensionService.installedBoxName)) {
+        await Hive.openBox<dynamic>(MihonExtensionService.installedBoxName);
+      }
+      final box = Hive.box<dynamic>(MihonExtensionService.installedBoxName);
+      if (box.isEmpty) {
+        return; // nothing installed yet
+      }
+      final support = await getApplicationSupportDirectory();
+      final mihonDir = Directory('${support.path}/mihon');
+      final service = MihonExtensionService();
+      await service.loadInstalled(mihonDir.path);
+      final sources = await service.listSources();
+      final providers = sources.map((s) => MihonProvider(info: s)).toList();
+      mihonManager.registerAll(providers);
+      // Honor a saved `mihon:` active source (the user quit while in manga
+      // mode) that wasn't loaded yet at boot. reapplySaved only swaps when the
+      // saved id is now valid and never resets an already-restored source, so
+      // this composes cleanly with the Aniyomi and CloudStream steps.
+      if (sl.isRegistered<ActiveSourceCubit>()) {
+        final showNsfw = sl.isRegistered<PlaybackPrefs>()
+            ? sl<PlaybackPrefs>().nsfwSources
+            : false;
+        final changed = sl<ActiveSourceCubit>().reapplySaved((id) {
+          final p = mihonManager.get(id);
+          if (p == null) return false;
+          if (p.info.nsfw && !showNsfw) return false;
+          return true;
+        });
+        if (changed && sl.isRegistered<HomeCubit>()) {
+          sl<HomeCubit>().load(); // reload Home for the restored source
+        }
+      }
+    } catch (e, st) {
+      debugPrint('[mihon] boot step failed (non-fatal): $e\n$st');
+    }
+  });
+
   // Global cubit so any widget can read/write the active source id and
   // descendants can react via BlocBuilder/BlocListener. Persists the pick to a
   // Hive box and restores it on launch, validated against the providers that
@@ -497,6 +571,7 @@ Future<void> initDependencies() async {
       manager: manager,
       csManager: csManager,
       aniManager: aniyomiManager,
+      mihonManager: mihonManager,
       activeSource: sl<ActiveSourceCubit>(),
       prefs: sl<PlaybackPrefs>(),
     ),
