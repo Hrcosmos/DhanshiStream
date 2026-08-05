@@ -627,7 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: '$readingCount sources',
         keywords: 'manga novel reading sources providers extensions zangetsu',
         onTap: () async {
-          await _push(const ZangetsuSourcesScreen());
+          await _push(const ZangetsuSourcesScreen(scopeToReading: true));
           if (mounted) setState(() {});
         },
       ),

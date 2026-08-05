@@ -172,6 +172,84 @@ void main() {
         expect(find.text('Aniyomi'), findsNothing);
       },
     );
+
+    // ── Fix round 1, finding 1: ACTIVE badge must be exclusive ────────────
+    testWidgets(
+      'an anime active source badges only the Zangetsu row (unchanged today)',
+      (tester) async {
+        sl.unregister<ActiveSourceCubit>();
+        sl.registerSingleton<ActiveSourceCubit>(
+          ActiveSourceCubit(fallback: 'anime1'),
+        );
+        await pump(tester);
+
+        expect(find.text('ACTIVE'), findsOneWidget);
+        final activeY = tester.getTopLeft(find.text('ACTIVE')).dy;
+        final zangetsuY = tester.getTopLeft(find.text('Zangetsu')).dy;
+        final mangaY = tester.getTopLeft(find.text('Manga & Novel')).dy;
+        expect((activeY - zangetsuY).abs(), lessThan((activeY - mangaY).abs()));
+      },
+    );
+
+    testWidgets(
+      'a manga active source badges only the Manga & Novel row, not Zangetsu',
+      (tester) async {
+        sl.unregister<ActiveSourceCubit>();
+        sl.registerSingleton<ActiveSourceCubit>(
+          ActiveSourceCubit(fallback: 'manga1'),
+        );
+        await pump(tester);
+
+        expect(find.text('ACTIVE'), findsOneWidget);
+        final activeY = tester.getTopLeft(find.text('ACTIVE')).dy;
+        final zangetsuY = tester.getTopLeft(find.text('Zangetsu')).dy;
+        final mangaY = tester.getTopLeft(find.text('Manga & Novel')).dy;
+        expect((activeY - mangaY).abs(), lessThan((activeY - zangetsuY).abs()));
+      },
+    );
+
+    // ── Fix round 1, finding 2: tapping through actually separates content ─
+    testWidgets(
+      'tapping Manga & Novel scopes the Installed tab to reading providers, '
+      'with a Show all escape hatch back to everything',
+      (tester) async {
+        await pump(tester);
+
+        await tester.tap(find.text('Manga & Novel'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Manga One'), findsOneWidget);
+        expect(find.text('Novel One'), findsOneWidget);
+        // Anime provider is hidden by default — this is the actual "different
+        // from streaming mode" the user asked for, not just a different tile.
+        expect(find.text('Anime One'), findsNothing);
+
+        // The user can still always reach everything.
+        final showAll = find.text('Show all');
+        expect(showAll, findsOneWidget);
+        await tester.tap(showAll);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Anime One'), findsOneWidget);
+        expect(find.text('Manga One'), findsOneWidget);
+        expect(find.text('Novel One'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping Zangetsu (unscoped) still shows every provider, no scoping UI',
+      (tester) async {
+        await pump(tester);
+
+        await tester.tap(find.text('Zangetsu'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Anime One'), findsOneWidget);
+        expect(find.text('Manga One'), findsOneWidget);
+        expect(find.text('Novel One'), findsOneWidget);
+        expect(find.text('Show all'), findsNothing);
+      },
+    );
   });
 
   // ── Settings → Sources ──────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../core/app_mode.dart';
 import '../../core/di/injector.dart';
+import '../../core/models/provider_info.dart';
 import '../../core/playback/playback_prefs.dart';
 import '../../core/provider/provider_registry.dart';
 import '../../core/provider/provider_repo_registry.dart';
@@ -10,6 +11,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text.dart';
 import '../../core/tv/tv_back_button.dart';
 import '../../core/tv/tv_focusable.dart';
+import '../../core/ui/source_switcher.dart';
 import '../../core/ui/states.dart';
 import 'bloc/sources_bloc.dart';
 import 'bloc/sources_event.dart';
@@ -25,12 +27,25 @@ import 'sources_search_field.dart';
 /// widget below is copied byte-identical from `sources_screen.dart` /
 /// `sources_screen_tv.dart` — only the host screen around them is new.
 class ZangetsuSourcesScreen extends StatelessWidget {
-  const ZangetsuSourcesScreen({super.key, this.openToRepos = false});
+  const ZangetsuSourcesScreen({
+    super.key,
+    this.openToRepos = false,
+    this.scopeToReading = false,
+  });
 
   /// Opens straight to the Repositories tab (phone only — TV keeps its own
   /// default) — used by the reading-mode source picker's install CTA, which
   /// has nothing to show on Installed anyway.
   final bool openToRepos;
+
+  /// When true, the phone Installed tab leads with manga/novel providers
+  /// instead of the full unfiltered list, with a "Show all" toggle back to
+  /// everything (Task E3 fix round 1 — a tile that opens an identical
+  /// unfiltered screen doesn't read as "different from streaming mode").
+  /// Defaults to false so every other call site (the existing Zangetsu row,
+  /// Settings → Providers) is untouched. TV never reads this — [_ZTvView]
+  /// doesn't take it, so TV is unaffected regardless of the caller.
+  final bool scopeToReading;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +56,10 @@ class ZangetsuSourcesScreen extends StatelessWidget {
       ),
       child: sl<AppMode>().isTv
           ? const _ZTvView()
-          : _ZPhoneView(openToRepos: openToRepos),
+          : _ZPhoneView(
+              openToRepos: openToRepos,
+              scopeToReading: scopeToReading,
+            ),
     );
   }
 }
@@ -51,9 +69,13 @@ class ZangetsuSourcesScreen extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ZPhoneView extends StatefulWidget {
-  const _ZPhoneView({this.openToRepos = false});
+  const _ZPhoneView({this.openToRepos = false, this.scopeToReading = false});
 
+  /// See [ZangetsuSourcesScreen.openToRepos].
   final bool openToRepos;
+
+  /// See [ZangetsuSourcesScreen.scopeToReading].
+  final bool scopeToReading;
 
   @override
   State<_ZPhoneView> createState() => _ZPhoneViewState();
@@ -63,6 +85,11 @@ class _ZPhoneViewState extends State<_ZPhoneView> {
   final _searchCtrl = TextEditingController();
   String _query = '';
 
+  /// User-toggled escape hatch out of the reading-only scope. Only consulted
+  /// when [ZangetsuSourcesScreen.scopeToReading] is true; irrelevant (and
+  /// never surfaced) otherwise.
+  bool _showAll = false;
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -71,6 +98,7 @@ class _ZPhoneViewState extends State<_ZPhoneView> {
 
   @override
   Widget build(BuildContext context) {
+    final readingOnly = widget.scopeToReading && !_showAll;
     return BlocListener<SourcesBloc, SourcesState>(
       listenWhen: (a, b) =>
           b.notice != null &&
@@ -86,7 +114,12 @@ class _ZPhoneViewState extends State<_ZPhoneView> {
         child: Scaffold(
           backgroundColor: AppColors.bg,
           appBar: AppBar(
-            title: Text('Zangetsu providers', style: AppText.barTitle),
+            title: Text(
+              widget.scopeToReading
+                  ? 'Manga & Novel providers'
+                  : 'Zangetsu providers',
+              style: AppText.barTitle,
+            ),
             bottom: TabBar(
               indicatorColor: AppColors.accent,
               indicatorSize: TabBarIndicatorSize.label,
@@ -120,12 +153,37 @@ class _ZPhoneViewState extends State<_ZPhoneView> {
                   onChanged: (q) => setState(() => _query = q),
                 ),
               ),
+              // Scoped-entry affordance (Task E3 fix round 1): only shown
+              // when opened from the Manga & Novel row. Guarantees the user
+              // can always reach every installed source, scoped or not.
+              if (widget.scopeToReading)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _showAll
+                              ? 'Showing every installed provider'
+                              : 'Showing manga & novel providers',
+                          style: AppText.caption,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() => _showAll = !_showAll),
+                        child: Text(_showAll ? 'Manga & Novel only' : 'Show all'),
+                      ),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: TabBarView(
                   children: [
                     ListView(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                      children: [_ZInstalledSection(query: _query)],
+                      children: [
+                        _ZInstalledSection(query: _query, readingOnly: readingOnly),
+                      ],
                     ),
                     ListView(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
@@ -153,9 +211,14 @@ Future<void> _showAddRepoDialog(BuildContext context) {
 /// Installed zone body for phone — the JS provider groups by origin repo.
 /// Hides when empty with an empty-state line + hint.
 class _ZInstalledSection extends StatelessWidget {
-  const _ZInstalledSection({this.query = ''});
+  const _ZInstalledSection({this.query = '', this.readingOnly = false});
 
   final String query;
+
+  /// Task E3 fix round 1: when true, only manga/novel entries are shown
+  /// (the Manga & Novel hub row's scoped view). Default false is today's
+  /// unfiltered behavior, unchanged.
+  final bool readingOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -165,12 +228,15 @@ class _ZInstalledSection extends StatelessWidget {
         final entries = state.installed
             .where((e) => sourceSearchMatches(
                 query, e.displayName.isNotEmpty ? e.displayName : e.name))
+            .where((e) => !readingOnly || _isReadingEntry(e))
             .toList();
         if (entries.isEmpty) {
           return EmptyState(
             icon: Icons.dns_rounded,
             message: query.trim().isEmpty
-                ? 'No providers installed.'
+                ? (readingOnly
+                    ? 'No manga/novel providers installed.'
+                    : 'No providers installed.')
                 : 'No installed providers match "${query.trim()}".',
           );
         }
@@ -225,6 +291,13 @@ class _ZInstalledSection extends StatelessWidget {
       },
     );
   }
+}
+
+/// sourceTypeOf is the app's one ProviderType resolver — reused here for the
+/// Manga & Novel scoped view rather than re-derived.
+bool _isReadingEntry(ProviderRegistryEntry e) {
+  final t = sourceTypeOf(e.name);
+  return t == ProviderType.manga || t == ProviderType.novel;
 }
 
 /// Repositories zone body for phone — repo rows with browse/install.

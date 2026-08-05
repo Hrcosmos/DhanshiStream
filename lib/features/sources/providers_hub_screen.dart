@@ -144,7 +144,11 @@ class _HubPhoneView extends StatelessWidget {
         children: [
           _HubHeader(
             total: total,
-            ecoCount: ecoCount,
+            // +1 for the always-shown Manga & Novel row — not a separate
+            // ecosystem count (ecoCount itself is untouched, still just
+            // Zangetsu/CS/Aniyomi), just the header copy matching what's on
+            // screen.
+            ecoCount: ecoCount + 1,
             activeName: activeName,
             totalUpdates: totalUpdates,
           ),
@@ -154,7 +158,12 @@ class _HubPhoneView extends StatelessWidget {
             title: 'Zangetsu',
             desc: 'Built-in JS providers',
             info: '$zangetsuCount sources',
-            active: activeIsZangetsu,
+            // Reading sources are Zangetsu providers too (activeIsZangetsu
+            // alone doesn't distinguish), so exclude them here — the Manga &
+            // Novel row owns the badge when a reading source is active. When
+            // the active source is anime/movie, activeIsReading is false and
+            // this is byte-identical to plain activeIsZangetsu, as before.
+            active: activeIsZangetsu && !activeIsReading,
             updateCount: zUpdates,
             onTap: () => open(const ZangetsuSourcesScreen()),
           ),
@@ -190,7 +199,8 @@ class _HubPhoneView extends StatelessWidget {
             info: '$readingCount sources',
             active: activeIsReading,
             updateCount: readingUpdates,
-            onTap: () => open(const ZangetsuSourcesScreen()),
+            onTap: () =>
+                open(const ZangetsuSourcesScreen(scopeToReading: true)),
           ),
         ],
       ),
