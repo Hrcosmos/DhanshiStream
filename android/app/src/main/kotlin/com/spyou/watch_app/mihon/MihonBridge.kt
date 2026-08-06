@@ -148,7 +148,7 @@ class MihonBridge(
                 }
 
                 // Return a JSON array of all registered sources.
-                "listSources" -> result.success(sourcesJson())
+                "listSources" -> result.success(sourcesJson(MihonSourceManager.installed()))
 
                 // ------------------------------------------------------------------
                 // Data methods — each runs on the bridge IO scope and marshals the
@@ -362,42 +362,92 @@ class MihonBridge(
             }
         }
     }
+}
 
-    /**
-     * Serialises all registered sources as a JSON array string.
-     *
-     * Keys: id, name, lang, nsfw, pkg, version, versionCode, baseUrl, headers —
-     * identical to the anime bridge's shape so the Dart source model can be a
-     * straight copy. `baseUrl` / `headers` are empty for a non-[HttpSource].
-     */
-    private fun sourcesJson(): String {
-        val arr = JSONArray()
-        MihonSourceManager.installed().forEach { ext ->
-            ext.sources.forEach { src ->
-                arr.put(
-                    JSONObject().apply {
-                        put("id", src.id)
-                        put("name", src.name)
-                        put("lang", src.lang)
-                        put("nsfw", ext.nsfw)
-                        put("pkg", ext.pkg)
-                        put("version", ext.versionName)
-                        put("versionCode", ext.versionCode)
-                        put("baseUrl", (src as? HttpSource)?.baseUrl ?: "")
-                        // Source-level headers (Referer/User-Agent) needed by the Dart
-                        // layer to fetch cover images without 403s on strict hosts.
-                        put(
-                            "headers",
-                            (src as? HttpSource)
-                                ?.let { MihonJson.headersToJsonObject(it.headers) }
-                                ?: JSONObject(),
-                        )
-                    },
-                )
-            }
-        }
-        return arr.toString()
+// -----------------------------------------------------------------------------
+// Source enumeration — every property read here runs third-party extension code
+// -----------------------------------------------------------------------------
+
+/** logcat tag for extension code that misbehaves while sources are enumerated. */
+private const val SOURCE_LOG = "MihonSources"
+
+/**
+ * Runs [block] — a property read that lands in extension code — and degrades to
+ * [fallback] instead of propagating, logging under [SOURCE_LOG].
+ *
+ * Catches [Throwable], not [Exception], on purpose: the failure that motivated
+ * this is a `NoClassDefFoundError` (an [Error]) raised when an extension calls a
+ * host class we don't provide. `runCatching` already does exactly that.
+ *
+ * [src] is identified by class name rather than `name` — `name` is itself
+ * extension code and may be the thing that's throwing.
+ */
+private fun <T> degrading(src: Any, what: String, fallback: T, block: () -> T): T =
+    runCatching(block).getOrElse { err ->
+        android.util.Log.w(SOURCE_LOG, "${src.javaClass.name}: $what threw, degrading", err)
+        fallback
     }
+
+/**
+ * Serialises [exts]' sources as a JSON array string.
+ *
+ * Keys: id, name, lang, nsfw, pkg, version, versionCode, baseUrl, headers —
+ * identical to the anime bridge's shape so the Dart source model can be a
+ * straight copy. `baseUrl` / `headers` are empty for a non-[HttpSource].
+ *
+ * ### Why everything here is guarded
+ * `baseUrl` and `headers` are not our code. `headers` is `by lazy { headersBuilder().build() }`,
+ * and `headersBuilder()` is overridden by the extension — MangaDex's, for one,
+ * reaches for `eu.kanade.tachiyomi.AppInfo`. This method runs on the platform
+ * main thread, so anything it lets escape is a hard process kill, and a single
+ * bad source used to take down the whole app before the user ever saw a list.
+ * So: per-field degradation first (a source that can't build headers is still
+ * worth listing — its covers just won't carry a Referer), and an outer guard per
+ * source for the fields with no sensible fallback (`id`/`name`/`lang`), so one
+ * unusable source is skipped instead of hiding its siblings.
+ */
+internal fun sourcesJson(exts: List<MihonLoadedExtension>): String {
+    val arr = JSONArray()
+    exts.forEach { ext ->
+        ext.sources.forEach { src ->
+            runCatching {
+                JSONObject().apply {
+                    put("id", src.id)
+                    put("name", src.name)
+                    put("lang", src.lang)
+                    put("nsfw", ext.nsfw)
+                    put("pkg", ext.pkg)
+                    put("version", ext.versionName)
+                    put("versionCode", ext.versionCode)
+                    put("baseUrl", degrading(src, "baseUrl", "") { (src as? HttpSource)?.baseUrl ?: "" })
+                    // Source-level headers (Referer/User-Agent) needed by the Dart
+                    // layer to fetch cover images without 403s on strict hosts.
+                    put("headers", headersJson(src as? HttpSource))
+                }
+            }.fold(
+                onSuccess = { arr.put(it) },
+                onFailure = { err ->
+                    // No fallback exists for id/name/lang, so this source can't be
+                    // listed at all — but the rest of its extension still can.
+                    android.util.Log.e(
+                        SOURCE_LOG,
+                        "${src.javaClass.name} (${ext.pkg}): unlistable, skipping it",
+                        err,
+                    )
+                },
+            )
+        }
+    }
+    return arr.toString()
+}
+
+/**
+ * [src]'s source-level headers as JSON — empty for a non-[HttpSource], and empty
+ * (plus a log line) when the extension's own `headersBuilder()` throws.
+ */
+internal fun headersJson(src: HttpSource?): JSONObject {
+    if (src == null) return JSONObject()
+    return degrading(src, "headers", JSONObject()) { MihonJson.headersToJsonObject(src.headers) }
 }
 
 // -----------------------------------------------------------------------------
@@ -494,7 +544,11 @@ internal suspend fun ensureImageUrl(page: Page, resolve: suspend (Page) -> Strin
  * or a rewritten URL gets exactly what it asked for. When the request can't be
  * built, we fall back to the page's own `imageUrl` (already in the JSON) plus
  * the source's default headers — which is what `HttpSource.imageRequest` does
- * by default anyway.
+ * by default anyway. Those come through [headersJson], because the usual reason
+ * [imageRequestOf] returned null is that the default `imageRequest` body touched
+ * those very headers and the extension's `headersBuilder()` threw; re-reading
+ * them unguarded would fail the whole chapter, whereas an unheadered page still
+ * renders on any host that doesn't check.
  *
  * [http] is null for a non-[HttpSource]; then there are no headers to send.
  */
@@ -522,7 +576,7 @@ internal fun pageDeliveryJson(http: HttpSource?, page: Page): JSONObject {
         json.put("imageUrl", request.url.toString())
         json.put("headers", MihonJson.headersToJsonObject(request.headers))
     } else {
-        json.put("headers", MihonJson.headersToJsonObject(http.headers))
+        json.put("headers", headersJson(http))
     }
     return json
 }
