@@ -2,7 +2,7 @@
 // streaming ecosystem rows (Zangetsu / CloudStream / Aniyomi).
 //
 // Two things under test:
-//  - ProvidersHubScreen (phone view) grows a fourth "Manga & Novel" row that
+//  - ProvidersHubScreen (phone view) grows a "Zangetsu Manga" row under a MANGA & NOVEL header that
 //    opens the Zangetsu JS providers screen — while the existing three rows
 //    stay exactly as they are today.
 //  - Settings → Sources grows a matching entry, in the same section, without
@@ -133,20 +133,20 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('shows a dedicated Manga & Novel entry, counting only reading sources',
+    testWidgets('shows a dedicated Zangetsu Manga entry, counting only reading sources',
         (tester) async {
       await pump(tester);
 
-      expect(find.text('Manga & Novel'), findsOneWidget);
+      expect(find.text('Zangetsu Manga'), findsOneWidget);
       // Only manga1 + novel1 — the video-only anime1 is excluded.
       expect(find.text('2 sources'), findsOneWidget);
     });
 
-    testWidgets('tapping Manga & Novel opens the Zangetsu JS providers screen',
+    testWidgets('tapping Zangetsu Manga opens the Zangetsu JS providers screen',
         (tester) async {
       await pump(tester);
 
-      await tester.tap(find.text('Manga & Novel'));
+      await tester.tap(find.text('Zangetsu Manga'));
       await tester.pumpAndSettle();
 
       expect(find.byType(ZangetsuSourcesScreen), findsOneWidget);
@@ -188,13 +188,13 @@ void main() {
         expect(find.text('ACTIVE'), findsOneWidget);
         final activeY = tester.getTopLeft(find.text('ACTIVE')).dy;
         final zangetsuY = tester.getTopLeft(find.text('Zangetsu')).dy;
-        final mangaY = tester.getTopLeft(find.text('Manga & Novel')).dy;
+        final mangaY = tester.getTopLeft(find.text('Zangetsu Manga')).dy;
         expect((activeY - zangetsuY).abs(), lessThan((activeY - mangaY).abs()));
       },
     );
 
     testWidgets(
-      'a manga active source badges only the Manga & Novel row, not Zangetsu',
+      'a manga active source badges only the Zangetsu Manga row, not Zangetsu',
       (tester) async {
         sl.unregister<ActiveSourceCubit>();
         sl.registerSingleton<ActiveSourceCubit>(
@@ -205,19 +205,19 @@ void main() {
         expect(find.text('ACTIVE'), findsOneWidget);
         final activeY = tester.getTopLeft(find.text('ACTIVE')).dy;
         final zangetsuY = tester.getTopLeft(find.text('Zangetsu')).dy;
-        final mangaY = tester.getTopLeft(find.text('Manga & Novel')).dy;
+        final mangaY = tester.getTopLeft(find.text('Zangetsu Manga')).dy;
         expect((activeY - mangaY).abs(), lessThan((activeY - zangetsuY).abs()));
       },
     );
 
     // ── Fix round 1, finding 2: tapping through actually separates content ─
     testWidgets(
-      'tapping Manga & Novel scopes the Installed tab to reading providers, '
+      'tapping Zangetsu Manga scopes the Installed tab to reading providers, '
       'with a Show all escape hatch back to everything',
       (tester) async {
         await pump(tester);
 
-        await tester.tap(find.text('Manga & Novel'));
+        await tester.tap(find.text('Zangetsu Manga'));
         await tester.pumpAndSettle();
 
         expect(find.text('Manga One'), findsOneWidget);

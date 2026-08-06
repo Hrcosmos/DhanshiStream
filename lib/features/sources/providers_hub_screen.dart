@@ -166,6 +166,8 @@ class _HubPhoneView extends StatelessWidget {
             totalUpdates: totalUpdates,
           ),
           const SizedBox(height: 24),
+          const _SectionLabel('STREAMING'),
+          const SizedBox(height: 12),
           _EcoRow(
             icon: Icons.dns_rounded,
             title: 'Zangetsu',
@@ -204,6 +206,23 @@ class _HubPhoneView extends StatelessWidget {
               onTap: () => open(const AniyomiSourcesScreen()),
             ),
           ],
+          const SizedBox(height: 28),
+          // Reading ecosystems live under their own header so a manga/novel
+          // source never reads as a streaming one. Mihon is manga-only; the
+          // Zangetsu row is what carries novel sources, which is why the
+          // header says "Manga & Novel" and not just "Manga".
+          const _SectionLabel('MANGA & NOVEL'),
+          const SizedBox(height: 12),
+          _EcoRow(
+            icon: Icons.auto_stories_rounded,
+            title: 'Zangetsu Manga',
+            desc: 'Built-in reading providers',
+            info: '$readingCount sources',
+            active: activeIsReading,
+            updateCount: readingUpdates,
+            onTap: () =>
+                open(const ZangetsuSourcesScreen(scopeToReading: true)),
+          ),
           if (showMihon) ...[
             const SizedBox(height: 12),
             _EcoRow(
@@ -216,21 +235,25 @@ class _HubPhoneView extends StatelessWidget {
               onTap: () => open(const MihonSourcesScreen()),
             ),
           ],
-          const SizedBox(height: 12),
-          _EcoRow(
-            icon: Icons.auto_stories_rounded,
-            title: 'Manga & Novel',
-            desc: 'Zangetsu reading providers',
-            info: '$readingCount sources',
-            active: activeIsReading,
-            updateCount: readingUpdates,
-            onTap: () =>
-                open(const ZangetsuSourcesScreen(scopeToReading: true)),
-          ),
         ],
       ),
     );
   }
+}
+
+/// Small all-caps label that groups the ecosystem rows into Streaming vs
+/// Manga & Novel. Uses the same [AppText.overline] the tracker sheet's section
+/// labels use, so the hub matches the rest of the app.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 4),
+    child: Text(text, style: AppText.overline),
+  );
 }
 
 /// Resolves an active-source id to its display name, mirroring the Settings
