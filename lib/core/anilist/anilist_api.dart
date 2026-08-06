@@ -45,6 +45,19 @@ String searchMediaQuery(MediaKind kind, {bool novelFormat = false}) {
       'title{ romaji english } coverImage{ medium } } } }';
 }
 
+/// Query text for the library read-back ([AniListService.fetchList]).
+///
+/// The manga variant also selects `format` — that's the ONLY way to tell a
+/// light novel from a manga, since AniList files both under `type: MANGA`
+/// (see [_anilistType]). Anime doesn't select it, so the anime request stays
+/// byte-identical to the pre-manga text.
+String mediaListCollectionQuery(MediaKind kind) {
+  final formatField = kind == MediaKind.manga ? ' format' : '';
+  return 'query(\$u:String){ MediaListCollection(userName:\$u, type:${_anilistType(kind)}){ '
+      'lists { status entries { status progress score(format:POINT_10) '
+      'media { idMal title { romaji english }$formatField coverImage { large } } } } } }';
+}
+
 /// The signed-in AniList user.
 class AniListViewer {
   const AniListViewer({required this.id, required this.name, this.avatar});
