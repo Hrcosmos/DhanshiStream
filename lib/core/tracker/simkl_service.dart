@@ -42,6 +42,9 @@ class SimklService extends ChangeNotifier implements Tracker {
   String get displayName => 'Simkl';
 
   @override
+  bool get supportsReading => false; // Simkl is video-only — no manga/novel API
+
+  @override
   bool get isConnected =>
       (_box.get('accessToken') as String?)?.isNotEmpty == true &&
       _box.get('viewerName') != null;

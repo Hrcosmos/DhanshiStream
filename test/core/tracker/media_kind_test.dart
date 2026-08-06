@@ -8,6 +8,9 @@ import 'package:watch_app/core/tracker/tracker_hub.dart';
 
 /// Records the [MediaKind] it was called with, for every kind-aware method.
 class _FakeTracker extends ChangeNotifier implements Tracker {
+  @override
+  bool get supportsReading => true;
+
   MediaKind? scrobbleKind;
 
   @override

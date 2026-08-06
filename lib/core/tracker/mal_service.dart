@@ -181,6 +181,9 @@ class MalService extends ChangeNotifier implements Tracker {
   String get displayName => 'MyAnimeList';
 
   @override
+  bool get supportsReading => true; // MAL has a manga list (incl. light novels)
+
+  @override
   bool get isConnected =>
       (_box.get('accessToken') as String?)?.isNotEmpty == true &&
       _box.get('viewerName') != null;

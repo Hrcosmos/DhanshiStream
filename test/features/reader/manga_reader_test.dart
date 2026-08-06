@@ -255,6 +255,9 @@ Episode chapter(String id, String url, {double? number}) =>
 /// Records every [Tracker.scrobble] call — no network, everything else is a
 /// no-op. Mirrors media_kind_test.dart's `_FakeTracker`.
 class _FakeTracker extends ChangeNotifier implements Tracker {
+  @override
+  bool get supportsReading => true;
+
   int scrobbleCalls = 0;
   MediaKind? lastScrobbleKind;
   int? lastScrobbleEpisode;

@@ -66,6 +66,9 @@ class _FakeListStatusStore implements ListStatusStore {
 /// Records the [MediaKind] of every setStatus/removeFromList call. Mirrors
 /// media_kind_test.dart's `_FakeTracker`.
 class _FakeTracker extends ChangeNotifier implements Tracker {
+  @override
+  bool get supportsReading => true;
+
   MediaKind? lastSetStatusKind;
   MediaKind? lastRemoveKind;
 

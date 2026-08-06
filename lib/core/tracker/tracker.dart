@@ -112,6 +112,12 @@ abstract interface class Tracker implements Listenable {
   /// Human label, e.g. "AniList".
   String get displayName;
 
+  /// Whether this tracker has a manga/novel library at all. False for Simkl,
+  /// which is video-only — its write paths already no-op on [MediaKind.manga].
+  /// The UI uses this to hide inapplicable trackers in a reading mode instead
+  /// of offering an account that can never sync anything there.
+  bool get supportsReading;
+
   bool get isConnected;
   String? get viewerName;
   String? get viewerAvatar;

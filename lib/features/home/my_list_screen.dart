@@ -109,7 +109,9 @@ class _MyListViewState extends State<_MyListView> {
       // Rebuild when a tracker connects/disconnects.
       animation: Listenable.merge(hub.trackers),
       builder: (context, _) {
-        final n = hub.connected.length;
+        final n = hub
+            .connectedForMode(sl<ContentModeCubit>().state)
+            .length;
         final subtitle = n == 0
             ? 'Your saved titles'
             : 'My List + $n tracker${n == 1 ? '' : 's'}';
@@ -218,7 +220,8 @@ class _MyListViewState extends State<_MyListView> {
   // ── Accounts button (connected avatars + ＋, else "Connect") ───────────────
 
   Widget _accountsButton(BuildContext context, TrackerHub hub) {
-    final connected = hub.connected.toList();
+    final connected =
+        hub.connectedForMode(sl<ContentModeCubit>().state).toList();
     if (connected.isEmpty) {
       return GestureDetector(
         onTap: () => _openAccountsSheet(context),
@@ -336,7 +339,7 @@ class _MyListViewState extends State<_MyListView> {
                 child: Text('Trackers', style: AppText.headline),
               ),
             ),
-            for (final t in hub.trackers)
+            for (final t in hub.forMode(sl<ContentModeCubit>().state))
               ListTile(
                 leading: SizedBox(
                   width: 34,
@@ -399,7 +402,8 @@ class _MyListViewState extends State<_MyListView> {
     return AnimatedBuilder(
       animation: Listenable.merge(hub.trackers),
       builder: (context, _) {
-        final connected = hub.connected.toList();
+        final connected =
+            hub.connectedForMode(sl<ContentModeCubit>().state).toList();
         final segments = <({
           String label,
           IconData? icon,
@@ -844,7 +848,11 @@ class _MyListViewState extends State<_MyListView> {
             tab('All', _statusFilter == null, countOf(null),
                 () => setState(() => _statusFilter = null)),
             for (final s in present)
-              tab(s.shortLabel, _statusFilter == s, countOf(s),
+              tab(
+                  shortLabelFor(s,
+                      reading: sl<ContentModeCubit>().state.isReading),
+                  _statusFilter == s,
+                  countOf(s),
                   () => setState(() => _statusFilter = s)),
           ],
         ),

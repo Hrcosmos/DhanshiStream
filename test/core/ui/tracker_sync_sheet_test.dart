@@ -10,6 +10,9 @@ import 'package:watch_app/core/ui/tracker_sync_sheet.dart';
 /// A connected fake tracker that records the [MediaKind] it was queried/
 /// written with and hands back a canned [TrackerEntry] — no network.
 class _FakeTracker extends ChangeNotifier implements Tracker {
+  @override
+  bool get supportsReading => true;
+
   _FakeTracker(this.name, {this.entry});
 
   final String name;

@@ -37,10 +37,18 @@ class FeaturedHero extends StatefulWidget {
     this.parallax = 0,
     this.kenBurns = false,
     this.wrapButton,
+    this.reading = false,
   });
 
   final MediaItem item;
   final bool inList;
+
+  /// Manga/novel mode: the primary action reads "Read" with a book glyph
+  /// instead of "Play" with a triangle. Defaults to false, so every existing
+  /// caller — including both TV heroes, which have no content mode — renders
+  /// exactly as before.
+  final bool reading;
+
   final VoidCallback onPlay;
   final VoidCallback onInfo;
   final VoidCallback onToggleList;
@@ -393,10 +401,16 @@ class _FeaturedHeroState extends State<FeaturedHero> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.play_arrow_rounded, color: AppColors.bg, size: 20),
+              Icon(
+                widget.reading
+                    ? Icons.menu_book_rounded
+                    : Icons.play_arrow_rounded,
+                color: AppColors.bg,
+                size: 20,
+              ),
               SizedBox(width: 7),
               Text(
-                'Play',
+                widget.reading ? 'Read' : 'Play',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   color: AppColors.bg,

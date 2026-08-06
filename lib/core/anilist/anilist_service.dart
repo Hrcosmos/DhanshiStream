@@ -126,6 +126,9 @@ class AniListService extends ChangeNotifier implements Tracker {
   String get displayName => 'AniList';
 
   @override
+  bool get supportsReading => true; // AniList has manga + light novels
+
+  @override
   bool get isConnected => _store.hasValidToken && _store.viewerId != null;
   @override
   String? get viewerName => _store.viewerName;

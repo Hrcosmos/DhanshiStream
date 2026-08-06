@@ -692,6 +692,8 @@ class _HomeViewState extends State<_HomeView> {
                               // Auto-rotating carousel (up to 6 trending items)
                               FeaturedCarousel(
                                 items: heroItems,
+                                reading:
+                                    sl<ContentModeCubit>().state.isReading,
                                 inList: (m) => _myList.contains(m),
                                 onPlay: _playFeatured,
                                 onInfo: _openDetail,
