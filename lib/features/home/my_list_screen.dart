@@ -709,16 +709,22 @@ class _MyListViewState extends State<_MyListView> {
       WatchStatus.paused,
       WatchStatus.dropped,
     ];
-    final presentStatuses = tabOrder
-        .where((s) => entries.any((e) => e.status == s))
-        .toList();
-
     // Reading modes (manga/novel) see only their own items; anime mode's
     // matchesProvider covers BOTH anime + movie types, so this is a no-op
     // there — today's anime My List is unaffected.
+    //
+    // Narrow by mode FIRST: the status tabs' counts and which tabs even appear
+    // are both derived from this, so counting raw `entries` showed anime totals
+    // (and anime-only status tabs) while in manga/novel mode.
     final mode = sl<ContentModeCubit>().state;
-    final filtered = entries.where((e) {
-      if (!mode.matchesProvider(e.item.type)) return false;
+    final modeEntries =
+        entries.where((e) => mode.matchesProvider(e.item.type)).toList();
+
+    final presentStatuses = tabOrder
+        .where((s) => modeEntries.any((e) => e.status == s))
+        .toList();
+
+    final filtered = modeEntries.where((e) {
       if (_statusFilter != null && e.status != _statusFilter) return false;
       if (_typeFilter != null && e.item.type != _typeFilter) return false;
       return true;
@@ -727,7 +733,7 @@ class _MyListViewState extends State<_MyListView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _statusTabs(entries, presentStatuses),
+        _statusTabs(modeEntries, presentStatuses),
         const SizedBox(height: 8),
         Expanded(
           child: filtered.isEmpty
