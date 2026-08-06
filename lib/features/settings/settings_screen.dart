@@ -27,6 +27,7 @@ import '../../core/privacy/incognito_mode.dart';
 import '../../core/playback/search_prefs.dart';
 import '../../core/playback/subtitle_language.dart';
 import '../../core/aniyomi/aniyomi_provider.dart';
+import '../../core/mihon/mihon_manager.dart';
 import '../../core/provider/cloudstream_provider.dart';
 import '../../core/provider/cs_dns.dart';
 import '../../core/provider/provider_manager.dart';
@@ -323,6 +324,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (activeId.startsWith('ani:')) {
       return sl<AniyomiManager>().get(activeId)?.displayName ?? activeId;
+    }
+    if (activeId.startsWith('mihon:')) {
+      return sl<MihonManager>().get(activeId)?.displayName ?? activeId;
     }
     final entry = _registry.entryFor(activeId);
     if (entry == null) return activeId;
