@@ -293,6 +293,15 @@ class _HomeViewState extends State<_HomeView> {
   }
 
   Future<void> _playFeatured(MediaItem item) async {
+    // Manga/novel: the hero's primary action says "Read", so it must not drop
+    // into the video player. Route to the title instead — Detail owns the real
+    // Read button, which resolves the chapter list, picks up the saved reading
+    // position and routes manga vs novel to the right reader. Duplicating that
+    // here would mean re-implementing chapter resolution on Home.
+    if (sl<ContentModeCubit>().state.isReading) {
+      _openDetail(item);
+      return;
+    }
     // Fresh play: prefer a saved per-title sub/dub choice, else the global
     // default category, else 'sub'.
     final category =
