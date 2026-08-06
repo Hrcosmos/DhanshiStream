@@ -1064,7 +1064,10 @@ class _DetailViewState extends State<_DetailView>
     if (hasMultipleSeasons) {
       metaParts.add('${seasonSet.length} Seasons');
     } else if (eps.isNotEmpty) {
-      metaParts.add('${eps.length} Episode${eps.length == 1 ? '' : 's'}');
+      // Manga/novel count chapters. The model stays `Episode`; this is the
+      // user-facing word only, so anime/movie reads exactly as before.
+      final unit = isReading ? 'Chapter' : 'Episode';
+      metaParts.add('${eps.length} $unit${eps.length == 1 ? '' : 's'}');
     }
     if (statusStr.isNotEmpty) metaParts.add(statusStr);
     final metaLine = metaParts.join('  ·  ');
@@ -1392,6 +1395,7 @@ class _DetailViewState extends State<_DetailView>
           _DetailsTab(
             sourceName: sourceName,
             statusStr: statusStr,
+            reading: isReading,
             genres: detail.genres,
             studios: detail.studios,
             episodeCount: eps.length,
@@ -4856,6 +4860,7 @@ class _DetailsTab extends StatelessWidget {
     required this.episodeCount,
     required this.year,
     required this.description,
+    this.reading = false,
   });
 
   final String sourceName;
@@ -4865,6 +4870,9 @@ class _DetailsTab extends StatelessWidget {
   final int episodeCount;
   final String? year;
   final String? description;
+
+  /// Manga/novel: the count row reads "Chapters". Display wording only.
+  final bool reading;
 
   @override
   Widget build(BuildContext context) {
@@ -4876,7 +4884,9 @@ class _DetailsTab extends StatelessWidget {
           _DetailRow(label: 'Source', value: sourceName),
         if (statusStr.isNotEmpty) _DetailRow(label: 'Status', value: statusStr),
         if ((year ?? '').isNotEmpty) _DetailRow(label: 'Year', value: year!),
-        _DetailRow(label: 'Episodes', value: '$episodeCount'),
+        _DetailRow(
+            label: reading ? 'Chapters' : 'Episodes',
+            value: '$episodeCount'),
         if (studios.isNotEmpty)
           _DetailRow(label: 'Studio', value: studios.join(', ')),
         if (genres.isNotEmpty) ...[

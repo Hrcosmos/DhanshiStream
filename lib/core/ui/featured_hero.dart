@@ -368,7 +368,11 @@ class _FeaturedHeroState extends State<FeaturedHero> {
         if (m == null) return const SizedBox.shrink();
         final parts = <String>[...m.genres.take(3)];
         if (m.episodeCount > 1) {
-          parts.add('${m.episodeCount} Episodes');
+          // Reading modes count chapters, not episodes (same shared
+          // Episode model underneath — display wording only).
+          parts.add(
+            '${m.episodeCount} ${widget.reading ? 'Chapters' : 'Episodes'}',
+          );
         } else if (m.year != null && m.year!.isNotEmpty) {
           parts.add(m.year!);
         }
