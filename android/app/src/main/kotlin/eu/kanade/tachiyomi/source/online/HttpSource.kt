@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
 import eu.kanade.tachiyomi.network.newCachelessCallWithProgress
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -75,8 +76,31 @@ abstract class HttpSource : CatalogueSource {
 
     /**
      * Default network client for doing requests.
+     *
+     * HOST ADAPTATION (not upstream): upstream Mihon builds its own OkHttp in
+     * `NetworkHelper` with an [UncaughtExceptionInterceptor] first in the chain.
+     * This host instead wraps the app's single shared client, which has no such
+     * interceptor — and some Mihon extensions assert its presence, failing with
+     * "UncaughtExceptionInterceptor must be present in default client".
+     *
+     * So derive a manga-only client here rather than adding the interceptor to
+     * the shared one: [network] is a singleton shared with the Aniyomi (anime)
+     * extensions and CloudStream, and `newBuilder()` leaves that original client
+     * untouched — it only copies its config, connection pool and dispatcher. The
+     * streaming path is therefore byte-identical to before.
+     *
+     * Inserted at index 0, not appended: the interceptor's own doc requires it
+     * to run first so it can wrap everything below it in the chain.
      */
-    open val client: OkHttpClient get() = network.client
+    open val client: OkHttpClient get() = mangaClient
+
+    /** Lazily-derived [client] — see the note there. Cheap: shares the shared
+     *  client's pool/dispatcher/cache, so this is config, not a second stack. */
+    private val mangaClient: OkHttpClient by lazy {
+        network.client.newBuilder()
+            .apply { interceptors().add(0, UncaughtExceptionInterceptor()) }
+            .build()
+    }
 
     /**
      * Generates a unique ID for the source based on the provided [name], [lang] and
