@@ -135,6 +135,8 @@ class _TvExoPlayerScreenState extends State<TvExoPlayerScreen> {
 
   List<SkipInterval> _skips = const [];
   bool _skipsFetched = false;
+  /// Interval starts (ms) already auto-skipped for the current episode.
+  final Set<int> _autoSkipped = <int>{};
 
   bool _markedWatching = false;
   final _scrobbled = <int>{}; // episode indices already scrobbled this session
@@ -195,6 +197,7 @@ class _TvExoPlayerScreenState extends State<TvExoPlayerScreen> {
     c.textTracks.addListener(_onTracksChanged);
     c.duration.addListener(_maybeFetchSkips);
     c.position.addListener(_scrobbleTick);
+    c.position.addListener(_maybeAutoSkip);
     c.playing.addListener(_onPlayingChanged);
     _bumpControls();
     _loadEpisode();
@@ -316,6 +319,7 @@ class _TvExoPlayerScreenState extends State<TvExoPlayerScreen> {
       _subDownloads.clear();
       _skipsFetched = false;
       _skips = const [];
+      _autoSkipped.clear(); // new episode → its OP/ED may auto-skip again
     }
     final gen = ++_loadGen; // this load supersedes any in-flight one
     _stopTorrent(); // kill any torrent from the previous source/episode
@@ -461,6 +465,29 @@ class _TvExoPlayerScreenState extends State<TvExoPlayerScreen> {
     }
   }
 
+  /// Opt-in auto-skip of the opening / ending, on every position tick. Waits for
+  /// the resume seek to be settled — before that the player reports ~0, which
+  /// sits inside the opening, and skipping there would strand a resumed episode
+  /// at the end of its OP instead of where the user left off.
+  void _maybeAutoSkip() {
+    final c = _c;
+    if (c == null || _skips.isEmpty || !_resumeSeeked) return;
+    final prefs = sl<PlaybackPrefs>();
+    final op = prefs.autoSkipOp;
+    final ed = prefs.autoSkipEd;
+    if (!op && !ed) return;
+    final iv = autoSkipAt(
+      _skips,
+      Duration(milliseconds: c.position.value),
+      op: op,
+      ed: ed,
+      fired: _autoSkipped,
+    );
+    if (iv == null) return;
+    _autoSkipped.add(iv.start.inMilliseconds);
+    c.seek(iv.end.inMilliseconds);
+  }
+
   void _maybeFetchSkips() {
     final c = _c;
     final ep = _ep;
@@ -468,7 +495,10 @@ class _TvExoPlayerScreenState extends State<TvExoPlayerScreen> {
       return;
     }
     _skipsFetched = true;
-    if (!sl<PlaybackPrefs>().skipIntro) return;
+    // Auto-skip needs the same timings the manual button does, so fetch when
+    // either feature is on — not just the button.
+    final prefs = sl<PlaybackPrefs>();
+    if (!prefs.skipIntro && !prefs.autoSkipOp && !prefs.autoSkipEd) return;
     final title = widget.showTitle;
     if (title == null || title.isEmpty) return;
     final epNum = (ep.number ?? (_index + 1)).toInt();

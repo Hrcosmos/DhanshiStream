@@ -12,6 +12,35 @@ class SkipInterval {
   final String type; // 'op' (opening) | 'ed' (ending)
 }
 
+/// Whether [type] names an ending. AniSkip also returns `mixed-ed`, and
+/// `endsWith` keeps that on the ending side without catching `mixed-op`
+/// (which `contains('ed')` would, since "mixed" itself contains "ed").
+bool isEndingSkip(String type) => type.endsWith('ed');
+
+/// The interval to auto-skip at [pos], or null when nothing should fire.
+///
+/// [fired] holds the interval starts (in ms) already skipped for this episode;
+/// each one fires at most once, so seeking back into an opening you actually
+/// wanted to watch doesn't bounce you straight out of it again. Callers add the
+/// returned interval's start to [fired] and clear the set on episode change.
+///
+/// The last second is left alone: skipping there saves nothing and risks a seek
+/// landing past the interval's own end.
+SkipInterval? autoSkipAt(
+  List<SkipInterval> intervals,
+  Duration pos, {
+  required bool op,
+  required bool ed,
+  required Set<int> fired,
+}) {
+  for (final iv in intervals) {
+    if (!(isEndingSkip(iv.type) ? ed : op)) continue;
+    if (fired.contains(iv.start.inMilliseconds)) continue;
+    if (pos >= iv.start && pos < iv.end - const Duration(seconds: 1)) return iv;
+  }
+  return null;
+}
+
 /// Accurate opening/ending skip times for ANIME via AniSkip
 /// (api.aniskip.com — free, no API key). Resolves the anime's MAL id from
 /// AniList by title, then queries AniSkip with the episode number + length.

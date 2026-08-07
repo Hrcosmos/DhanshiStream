@@ -376,6 +376,16 @@ class PlaybackPrefs {
   bool get skipIntro => _box.get('skipIntro', defaultValue: true) as bool;
   Future<void> setSkipIntro(bool value) => _box.put('skipIntro', value);
 
+  /// Jump past the opening / ending on their own, no tap, when AniSkip has real
+  /// timings for the episode. Independent of [skipIntro] (that one only governs
+  /// the manual button). Off by default — auto-seeking is the kind of thing you
+  /// opt into, and AniSkip timings are occasionally wrong.
+  bool get autoSkipOp => _box.get('autoSkipOp', defaultValue: false) as bool;
+  Future<void> setAutoSkipOp(bool value) => _box.put('autoSkipOp', value);
+
+  bool get autoSkipEd => _box.get('autoSkipEd', defaultValue: false) as bool;
+  Future<void> setAutoSkipEd(bool value) => _box.put('autoSkipEd', value);
+
   /// MegaSkip — a manual "jump forward N seconds" button shown in the player
   /// (Aniyomi-style), independent of the accurate AniSkip OP/ED skip above.
   /// [megaSkip] toggles the button; [megaSkipSeconds] is the jump size, clamped

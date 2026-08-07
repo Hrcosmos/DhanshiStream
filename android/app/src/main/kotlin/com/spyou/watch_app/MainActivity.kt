@@ -1011,6 +1011,8 @@ class MainActivity : FlutterActivity() {
             intent.putExtra(TvPlayerActivity.EXTRA_MEGASKIP, call.argument<Boolean>("megaSkip") ?: true)
             intent.putExtra(TvPlayerActivity.EXTRA_MEGASKIP_SECS, (call.argument<Number>("megaSkipSeconds") ?: 85).toInt())
             intent.putExtra(TvPlayerActivity.EXTRA_SKIP_INTRO, call.argument<Boolean>("skipIntro") ?: true)
+            intent.putExtra(TvPlayerActivity.EXTRA_AUTO_SKIP_OP, call.argument<Boolean>("autoSkipOp") ?: false)
+            intent.putExtra(TvPlayerActivity.EXTRA_AUTO_SKIP_ED, call.argument<Boolean>("autoSkipEd") ?: false)
 
             val headers = call.argument<Map<String, String>>("headers")
             if (!headers.isNullOrEmpty()) {

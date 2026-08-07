@@ -1958,6 +1958,26 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
                 },
               ),
               _toggleRow(
+                icon: Icons.fast_forward_rounded,
+                title: 'Auto-skip opening',
+                subtitle: 'Jump past the OP on its own, no tap',
+                value: _prefs.autoSkipOp,
+                onChanged: (v) async {
+                  await _prefs.setAutoSkipOp(v);
+                  if (mounted) setState(() {});
+                },
+              ),
+              _toggleRow(
+                icon: Icons.fast_forward_rounded,
+                title: 'Auto-skip ending',
+                subtitle: 'Jump past the ED on its own, no tap',
+                value: _prefs.autoSkipEd,
+                onChanged: (v) async {
+                  await _prefs.setAutoSkipEd(v);
+                  if (mounted) setState(() {});
+                },
+              ),
+              _toggleRow(
                 icon: Icons.keyboard_double_arrow_right_rounded,
                 title: 'MegaSkip button',
                 subtitle: 'A jump-forward button in the player (any video)',

@@ -132,6 +132,8 @@ class TvNativePlayer {
       'megaSkip': prefs.megaSkip,
       'megaSkipSeconds': prefs.megaSkipSeconds,
       'skipIntro': prefs.skipIntro,
+      'autoSkipOp': prefs.autoSkipOp,
+      'autoSkipEd': prefs.autoSkipEd,
     });
 
     // Player closed — stop any active torrent stream.

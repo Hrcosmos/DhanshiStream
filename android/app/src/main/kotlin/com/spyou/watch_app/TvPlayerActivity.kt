@@ -86,6 +86,8 @@ class TvPlayerActivity : Activity() {
         const val EXTRA_MEGASKIP = "megaSkip"
         const val EXTRA_MEGASKIP_SECS = "megaSkipSeconds"
         const val EXTRA_SKIP_INTRO = "skipIntro"
+        const val EXTRA_AUTO_SKIP_OP = "autoSkipOp"
+        const val EXTRA_AUTO_SKIP_ED = "autoSkipEd"
         // Result extras read back in MainActivity.onActivityResult.
         const val RESULT_POSITION = "positionMs"
         const val RESULT_DURATION = "durationMs"
@@ -147,6 +149,12 @@ class TvPlayerActivity : Activity() {
     private var megaSkipSecs = 85
     // Whether the AniSkip "Skip intro/ending" pill may show (Settings toggle).
     private var skipIntroEnabled = true
+    // Jump past the OP/ED without a press (Settings toggles, both off by default).
+    private var autoSkipOp = false
+    private var autoSkipEd = false
+    // Interval starts already auto-skipped for the current episode, so seeking
+    // back into an opening you meant to watch doesn't bounce you out again.
+    private val autoSkipped = HashSet<Long>()
     // Live subtitle size multiplier (seeded from prefs; changeable in-player).
     private var subScale = 1f
 
@@ -205,6 +213,8 @@ class TvPlayerActivity : Activity() {
         category = intent.getStringExtra(EXTRA_CATEGORY) ?: "sub"
         availableCategories = intent.getStringArrayExtra(EXTRA_AVAIL_CATS)?.toList() ?: emptyList()
         skipIntroEnabled = intent.getBooleanExtra(EXTRA_SKIP_INTRO, true)
+        autoSkipOp = intent.getBooleanExtra(EXTRA_AUTO_SKIP_OP, false)
+        autoSkipEd = intent.getBooleanExtra(EXTRA_AUTO_SKIP_ED, false)
         subScale = intent.getFloatExtra(EXTRA_SUB_SCALE, 1f)
         subtitleApiKeySet = intent.getBooleanExtra(EXTRA_SUB_HAS_KEY, false)
 
@@ -381,6 +391,7 @@ class TvPlayerActivity : Activity() {
         currentIndex = index
         skipIntervals = emptyList()
         skipsFetchedFor = -1
+        autoSkipped.clear() // new episode → its OP/ED may auto-skip again
         hideSkip()
         loadStream(
             url, headers, subsFromMap(m["subtitles"]), mime, positionMs,
@@ -464,8 +475,30 @@ class TvPlayerActivity : Activity() {
     }
 
     /** Show/hide the Skip pill based on the current position (called each tick). */
+    /**
+     * Jump past the opening / ending without a press, when the user opted in.
+     * Returns true when a skip fired, so the caller stops before flashing the
+     * pill for the interval we just left.
+     */
+    private fun maybeAutoSkip(p: ExoPlayer): Boolean {
+        if (skipIntervals.isEmpty() || switching) return false
+        if (!autoSkipOp && !autoSkipEd) return false
+        val pos = p.currentPosition
+        val iv = skipIntervals.firstOrNull {
+            val on = if (it.type.endsWith("ed")) autoSkipEd else autoSkipOp
+            // Leave the last second alone — skipping there saves nothing.
+            on && it.start !in autoSkipped && pos >= it.start && pos < it.end - 1000L
+        } ?: return false
+        autoSkipped.add(iv.start)
+        hideSkip()
+        p.seekTo(iv.end)
+        return true
+    }
+
     private fun updateSkip() {
         val p = player ?: return
+        // Auto-skip is its own feature — it runs even with the pill toggled off.
+        if (maybeAutoSkip(p)) return
         // Respect the Settings "Skip intro button" toggle.
         if (!skipIntroEnabled) {
             if (skipButton.visibility == View.VISIBLE) hideSkip()
